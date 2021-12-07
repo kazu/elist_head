@@ -2,6 +2,7 @@ package elist_head_test
 
 import (
 	"testing"
+	"unsafe"
 
 	"github.com/kazu/elist_head"
 	list_head "github.com/kazu/loncha/lista_encabezado"
@@ -9,6 +10,10 @@ import (
 )
 
 func Test_InserBefore(t *testing.T) {
+
+	// var head elist_head.Head
+
+	// head = &elist_head.ListHead{}
 
 	cur := elist_head.ListHead{}
 	cur.Init()
@@ -33,6 +38,46 @@ func Test_Delete(t *testing.T) {
 
 	assert.Equal(t, true, p.Empty())
 	assert.Equal(t, true, p.Empty())
+
+}
+
+type CopyTest struct {
+	elist_head.ListHead
+}
+
+func Test_CopySlice(t *testing.T) {
+
+	e := &elist_head.ListHead{}
+	e.Init()
+
+	list1 := make([]CopyTest, 10)
+
+	list1[0].Init()
+	e.DirectNext().InsertBefore(&list1[0].ListHead)
+
+	list2 := make([]CopyTest, 0, 20)
+	list2 = append(list2, list1...)
+
+	assert.Same(t, e.DirectNext(), &list1[0].ListHead)
+	// assert.NotEqual(t, unsafe.Pointer(e.DirectNext()),
+	// 	unsafe.Pointer(&list2[0].ListHead))
+	assert.NotSame(t, e.DirectNext(), &list2[0].ListHead)
+
+	a := (*elist_head.ListHead)(nil)
+	rr := unsafe.Sizeof(*a)
+	rr = unsafe.Sizeof(*e)
+	rr = unsafe.Sizeof(e)
+
+	_ = rr
+
+	elist_head.RepaireSliceAfterCopy(
+		unsafe.Pointer(&list1[0].ListHead),
+		unsafe.Pointer(&list1[9].ListHead),
+		unsafe.Pointer(&list2[0].ListHead),
+		int(unsafe.Sizeof(elist_head.ListHead{})),
+		0)
+	assert.NotSame(t, e.DirectNext(), &list1[0].ListHead)
+	assert.Same(t, e.DirectNext(), &list2[0].ListHead)
 
 }
 

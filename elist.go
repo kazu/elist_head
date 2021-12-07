@@ -91,6 +91,10 @@ type ListHead struct {
 	next unsafe.Pointer
 }
 
+func (head *ListHead) Ptr() unsafe.Pointer {
+	return unsafe.Pointer(head)
+}
+
 type ListHeadWithError struct {
 	head *ListHead
 	err  error
@@ -151,6 +155,19 @@ func (head *ListHead) Init() {
 
 }
 
+func InitAsEmpty(head *ListHead, tail *ListHead) {
+
+	head.prev = unsafe.Pointer(uintptr(0))
+	head.next = unsafe.Pointer(uintptr(0))
+
+	tail.next = unsafe.Pointer(uintptr(0))
+	tail.prev = unsafe.Pointer(uintptr(0))
+
+	head.next = head.diffPtrToHead(tail)
+	tail.prev = tail.diffPtrToHead(head)
+
+}
+
 func (head *ListHead) InitAsEmpty() {
 
 	end := NewEmpty()
@@ -172,7 +189,31 @@ func (head *ListHead) ptr() unsafe.Pointer {
 
 }
 
+func (head *ListHead) DirectNext() *ListHead {
+	return head.directNext()
+}
+
 func (head *ListHead) directNext() (next *ListHead) {
+
+	if head.next == unsafe.Pointer(nil) {
+		return head
+	}
+	i := int(uintptr(head.next))
+
+	// if int(uintptr(head.next)) > 0x300000 || int(uintptr(head.next)) < -(0x300000) {
+	// 	n, m := int(uintptr(head.next)), int(uintptr(head.next))
+	// 	r1, r2 := 0x300000, -(0x300000)
+	// 	_, _, _, _ = n, m, r1, r2
+	// 	return head
+	// }
+
+	// FIXME: remove later?
+	if i > 0 && i > 0x1000000 {
+		return head
+	}
+	if i < 0 && i < -(0x1000000) {
+		return head
+	}
 
 	return (*ListHead)(unsafe.Add(head.ptr(), int(uintptr(head.next))))
 }
@@ -236,6 +277,10 @@ func (head *ListHead) Next(opts ...list_head.TravOpt) (next *ListHead) {
 	}
 
 	return head.directNext()
+}
+
+func (head *ListHead) DirectPrev() *ListHead {
+	return head.directPrev()
 }
 
 func (head *ListHead) directPrev() (next *ListHead) {

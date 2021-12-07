@@ -14,7 +14,7 @@ import (
 //   new.next  -> head
 //   new       <- head.prev
 
-func (head *ListHead) _InsertBefore(new *ListHead) {
+func (head *ListHead) __InsertBefore(new *ListHead) {
 
 	//prev.next, head.prev = prev.diffPtrToHead(head), head.diffPtrToHead(prev)
 
@@ -23,6 +23,12 @@ func (head *ListHead) _InsertBefore(new *ListHead) {
 	prev.next, new.prev, new.next = prev.diffPtrToHead(new), new.diffPtrToHead(prev), new.diffPtrToHead(head)
 
 }
+
+// func (head *ListHead) InsertBefore(new Head, opts ...list_head.TravOpt) (Head, error) {
+// 	nhead := new.(*ListHead)
+
+// 	return head._InsertBefore(nhead, opts...)
+// }
 
 func (head *ListHead) InsertBefore(new *ListHead, opts ...list_head.TravOpt) (*ListHead, error) {
 
