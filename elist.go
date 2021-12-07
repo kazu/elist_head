@@ -198,22 +198,15 @@ func (head *ListHead) directNext() (next *ListHead) {
 	if head.next == unsafe.Pointer(nil) {
 		return head
 	}
-	i := int(uintptr(head.next))
+	//i := int(uintptr(head.next))
 
-	// if int(uintptr(head.next)) > 0x300000 || int(uintptr(head.next)) < -(0x300000) {
-	// 	n, m := int(uintptr(head.next)), int(uintptr(head.next))
-	// 	r1, r2 := 0x300000, -(0x300000)
-	// 	_, _, _, _ = n, m, r1, r2
+	// FIXME: enable later?
+	// if i > 0 && i > 0x1000000 {
 	// 	return head
 	// }
-
-	// FIXME: remove later?
-	if i > 0 && i > 0x1000000 {
-		return head
-	}
-	if i < 0 && i < -(0x1000000) {
-		return head
-	}
+	// if i < 0 && i < -(0x1000000) {
+	// 	return head
+	// }
 
 	return (*ListHead)(unsafe.Add(head.ptr(), int(uintptr(head.next))))
 }
