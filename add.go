@@ -20,7 +20,7 @@ func (head *ListHead) __InsertBefore(new *ListHead) {
 
 	prev := head.directPrev()
 
-	prev.next, new.prev, new.next = prev.diffPtrToHead(new), new.diffPtrToHead(prev), new.diffPtrToHead(head)
+	prev.next, new.prev, new.next = uintptr(prev.diffPtrToHead(new)), uintptr(new.diffPtrToHead(prev)), uintptr(new.diffPtrToHead(head))
 
 }
 
@@ -36,7 +36,7 @@ func (head *ListHead) InsertBefore(new *ListHead, opts ...list_head.TravOpt) (*L
 
 	if new.IsMarked() {
 		if ok, _ := new.IsSafety(); ok {
-			new.Init()
+			new.prev, new.next = uintptr(0), uintptr(0)
 		} else {
 			return head, ErrNoSafetyOnAdd
 		}
@@ -130,8 +130,8 @@ func listAddWitCas(new, prev, next *ListHead, fn func(*ListHead) *sync.RWMutex) 
 		}
 	}
 	rollback := func(new *ListHead) {
-		atomic.StorePointer(&new.prev, oNewPrev)
-		atomic.StorePointer(&new.next, oNewNext)
+		atomic.StoreUintptr(&new.prev, oNewPrev)
+		atomic.StoreUintptr(&new.next, oNewNext)
 
 		// StoreListHead(&new.prev, (*ListHead)(unsafe.Pointer(oNewPrev)))
 		// StoreListHead(&new.next, (*ListHead)(unsafe.Pointer(oNewNext)))
@@ -139,8 +139,8 @@ func listAddWitCas(new, prev, next *ListHead, fn func(*ListHead) *sync.RWMutex) 
 	_ = rollback
 
 	// new.prev -> prev, new.next -> next
-	atomic.StorePointer(&new.prev, new.diffPtrToHead(prev))
-	atomic.StorePointer(&new.next, new.diffPtrToHead(next))
+	atomic.StoreUintptr(&new.prev, uintptr(new.diffPtrToHead(prev)))
+	atomic.StoreUintptr(&new.next, uintptr(new.diffPtrToHead(next)))
 	// StoreListHead(&new.prev, prev)
 	// StoreListHead(&new.next, next)
 

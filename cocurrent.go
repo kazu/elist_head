@@ -28,22 +28,22 @@ func StoreListHead(dst *unsafe.Pointer, src *ListHead) {
 	atomic.StorePointer(dst,
 		unsafe.Pointer(src))
 }
-func Cas(target *unsafe.Pointer, old, new *ListHead) bool {
-	return atomic.CompareAndSwapPointer(target,
-		unsafe.Pointer(old),
-		unsafe.Pointer(new))
+func Cas(target *uintptr, old, new *ListHead) bool {
+	return atomic.CompareAndSwapUintptr(target,
+		uintptr(unsafe.Pointer(old)),
+		uintptr(unsafe.Pointer(new)))
 }
 
-func MarkListHead(target *unsafe.Pointer, old unsafe.Pointer) bool {
+func MarkListHead(target *uintptr, old uintptr) bool {
 
 	//mask := uintptr(^uint(0)) ^ 1
-	return atomic.CompareAndSwapPointer((*unsafe.Pointer)(unsafe.Pointer(target)),
+	return atomic.CompareAndSwapUintptr(target,
 		*target,
-		unsafe.Pointer(uintptr(old)|1))
+		uintptr(old)|1)
 
 }
 
-func (head *ListHead) noInners(start, end uintptr) (result []unsafe.Pointer) {
+func (head *ListHead) noInners(start, end uintptr) (result []uintptr) {
 
 	ptr := uintptr(unsafe.Pointer(head))
 
@@ -107,8 +107,11 @@ func RepaireSliceAfterCopy(sHead, sTail unsafe.Pointer, dHead unsafe.Pointer, si
 
 			if iPtr == cHead.prev {
 				t := cHead.directPrev()
-				t.next = unsafe.Add(t.next, moved)
-				dHead.prev = unsafe.Add(dHead.prev, -moved)
+				// t.next = unsafe.Add(t.next, moved)
+				// dHead.prev = unsafe.Add(dHead.prev, -moved)
+				t.next = IncPointer(t.next, moved)
+				dHead.prev = IncPointer(dHead.prev, -moved)
+
 				tt := dHead.directPrev()
 				succ := tt == t && tt.directNext() != cHead
 				if !succ {
@@ -117,8 +120,11 @@ func RepaireSliceAfterCopy(sHead, sTail unsafe.Pointer, dHead unsafe.Pointer, si
 
 			} else if iPtr == cHead.next {
 				t := cHead.directNext()
-				t.prev = unsafe.Add(t.prev, moved)
-				dHead.next = unsafe.Add(dHead.next, -moved)
+				// t.prev = unsafe.Add(t.prev, moved)
+				// dHead.next = unsafe.Add(dHead.next, -moved)
+				t.prev = IncPointer(t.prev, moved)
+				dHead.next = IncPointer(dHead.next, -moved)
+
 				tt := dHead.directNext()
 				succ := tt == t && tt.directPrev() != cHead
 				if !succ {

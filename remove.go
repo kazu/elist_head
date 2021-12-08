@@ -109,12 +109,12 @@ func (head *ListHead) MarkForDelete(opts ...list_head.TravOpt) (err error) {
 
 		}
 
-		if !MarkListHead(&head.next, head.diffPtrToHead(next)) {
+		if !MarkListHead(&head.next, uintptr(head.diffPtrToHead(next))) {
 			//		if !MarkListHead(&l.next, unsafe.Pointer(next)) {
 			//AddRecoverState("remove: retry marked next")
 			return false, ErrDeketeStep0
 		}
-		if !MarkListHead(&head.prev, head.diffPtrToHead(prev)) {
+		if !MarkListHead(&head.prev, uintptr(head.diffPtrToHead(prev))) {
 			//if !MarkListHead(&l.prev, unsafe.Pointer(prev)) {
 
 			//AddRecoverState("remove: retry marked prev")
@@ -141,8 +141,8 @@ func (head *ListHead) MarkForDelete(opts ...list_head.TravOpt) (err error) {
 		prevs := [2]*ListHead{prev1, prev2}
 		nexts := [2]*ListHead{next1, next2}
 
-		prevNexts := []*unsafe.Pointer{&prev1.next, &prev2.next}
-		nextPrevs := []*unsafe.Pointer{&next1.prev, &next2.prev}
+		prevNexts := []*uintptr{&prev1.next, &prev2.next}
+		nextPrevs := []*uintptr{&next1.prev, &next2.prev}
 		//		nexts := []**ListHead{&next1.prev, &next2.prev}
 
 		// prevs := []**ListHead{&prev1.next, &prev2.next}
@@ -263,9 +263,17 @@ func InitAfterSafety(retry int) func(*ListHead) error {
 			if ok, _ := head.IsSafety(); !ok {
 				return false, ErrNoSafetyOnAdd
 			}
-			head.Init()
+			head.prev, head.next = uintptr(0), uintptr(0)
 			return true, nil
 		})
 	}
 
+}
+
+func IncPointer(t uintptr, moved int) uintptr {
+
+	tOld := int(t)
+	tOld += moved
+	//	atomic.StorePointer(t, unsafe.Pointer(uintptr(tOld)))
+	return uintptr(tOld)
 }

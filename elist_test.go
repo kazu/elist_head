@@ -11,27 +11,30 @@ import (
 
 func Test_InserBefore(t *testing.T) {
 
-	// var head elist_head.Head
-
-	// head = &elist_head.ListHead{}
+	lists := make([]elist_head.ListHead, 2)
+	elist_head.InitAsEmpty(&lists[0], &lists[1])
 
 	cur := elist_head.ListHead{}
-	cur.Init()
+	lists[1].InsertBefore(&cur)
+	assert.Same(t, &cur, cur.Prev().Next())
 	prev := elist_head.ListHead{}
-	prev.Init()
 
 	cur.InsertBefore(&prev)
 
 	p := cur.Prev()
 
-	assert.Equal(t, p, &prev)
+	assert.Samef(t, p, &prev, "p=%p &prev=%p prev=%+v cur=%p cur%+v\n",
+		p, prev, prev, cur, cur)
 
 }
 
 func Test_Delete(t *testing.T) {
-
+	lists := make([]elist_head.ListHead, 2)
+	elist_head.InitAsEmpty(&lists[0], &lists[1])
 	cur := elist_head.ListHead{}
-	cur.Init()
+
+	lists[1].InsertBefore(&cur)
+
 	p := cur.Prev()
 
 	cur.Prev().Next().Delete()
@@ -47,12 +50,13 @@ type CopyTest struct {
 
 func Test_CopySlice(t *testing.T) {
 
+	ebase := make([]elist_head.ListHead, 2)
+	elist_head.InitAsEmpty(&ebase[0], &ebase[1])
 	e := &elist_head.ListHead{}
-	e.Init()
+	ebase[1].InsertBefore(e)
 
 	list1 := make([]CopyTest, 10)
-
-	list1[0].Init()
+	//list1[0].Init()
 	e.DirectNext().InsertBefore(&list1[0].ListHead)
 
 	list2 := make([]CopyTest, 0, 20)
@@ -85,8 +89,11 @@ func Benchmark_Next(b *testing.B) {
 
 	l := list_head.ListHead{}
 	l.InitAsEmpty()
-	el := elist_head.ListHead{}
-	el.InitAsEmpty()
+	// el := elist_head.ListHead{}
+	// el.InitAsEmpty()
+	els := make([]elist_head.ListHead, 2)
+	elist_head.InitAsEmpty(&els[0], &els[1])
+	el := &els[0]
 
 	items := make([]elist_head.ListHead, 10000)
 
@@ -95,7 +102,6 @@ func Benchmark_Next(b *testing.B) {
 		le.Init()
 		l.Prev().Next().InsertBefore(&le)
 		ee := &items[i]
-		ee.Init()
 		el.Prev().Next().InsertBefore(ee)
 	}
 
@@ -110,7 +116,7 @@ func Benchmark_Next(b *testing.B) {
 	})
 	b.ResetTimer()
 	b.Run("elist_head", func(b *testing.B) {
-		cur := &el
+		cur := el
 		b.StartTimer()
 		for i := 0; i < 10000; i++ {
 			cur = cur.Next()

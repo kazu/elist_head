@@ -87,8 +87,8 @@ func ErrorInfo(s string) OptNewError {
 }
 
 type ListHead struct {
-	prev unsafe.Pointer
-	next unsafe.Pointer
+	prev uintptr
+	next uintptr
 }
 
 func (head *ListHead) Ptr() unsafe.Pointer {
@@ -117,8 +117,8 @@ func GetConcurrentMode() bool {
 
 func NewEmpty() *ListHead {
 	empty := &ListHead{}
-	empty.prev = unsafe.Pointer(uintptr(0))
-	empty.next = unsafe.Pointer(uintptr(0))
+	empty.prev = uintptr(0)
+	empty.next = uintptr(0)
 	return empty
 }
 
@@ -139,47 +139,58 @@ func (head *ListHead) diffPtrTo(t unsafe.Pointer) unsafe.Pointer {
 }
 
 func (head *ListHead) Init() {
+
+	head.prev = uintptr(0)
+	head.next = uintptr(0)
+}
+
+// Deprecated ... _Init()
+func (head *ListHead) _Init() {
 	// if !MODE_CONCURRENT {
 	// 	head.prev = unsafe.Pointer(uintptr(0))
 	// 	head.next = unsafe.Pointer(uintptr(0))
 	// 	return
 	// }
 
-	start := NewEmpty()
-	end := NewEmpty()
-	head.prev = head.diffPtrToHead(start)
-	head.next = head.diffPtrToHead(end)
+	// start := NewEmpty()
+	// end := NewEmpty()
+	// head.prev = uintptr(head.diffPtrToHead(start))
+	// head.next = uintptr(head.diffPtrToHead(end))
 
-	start.next = start.diffPtrToHead(head)
-	end.prev = end.diffPtrToHead(head)
+	// start.next = uintptr(start.diffPtrToHead(head))
+	// end.prev = uintptr(end.diffPtrToHead(head))
 
+	l := &ListHead{}
+	l._InitAsEmpty()
+	l.directNext().InsertBefore(head)
 }
 
 func InitAsEmpty(head *ListHead, tail *ListHead) {
 
-	head.prev = unsafe.Pointer(uintptr(0))
-	head.next = unsafe.Pointer(uintptr(0))
+	head.prev = uintptr(0)
+	head.next = uintptr(0)
 
-	tail.next = unsafe.Pointer(uintptr(0))
-	tail.prev = unsafe.Pointer(uintptr(0))
+	tail.next = uintptr(0)
+	tail.prev = uintptr(0)
 
-	head.next = head.diffPtrToHead(tail)
-	tail.prev = tail.diffPtrToHead(head)
+	head.next = uintptr(head.diffPtrToHead(tail))
+	tail.prev = uintptr(tail.diffPtrToHead(head))
 
 }
 
-func (head *ListHead) InitAsEmpty() {
+// Deprecated ... _InitAsEmpty()
+func (head *ListHead) _InitAsEmpty() {
 
 	end := NewEmpty()
 
-	head.prev = unsafe.Pointer(uintptr(0))
-	head.next = unsafe.Pointer(uintptr(0))
+	head.prev = uintptr(0)
+	head.next = uintptr(0)
 
-	end.next = unsafe.Pointer(uintptr(0))
-	end.prev = unsafe.Pointer(uintptr(0))
+	end.next = uintptr(0)
+	end.prev = uintptr(0)
 
-	head.next = head.diffPtrToHead(end)
-	end.prev = end.diffPtrToHead(head)
+	head.next = uintptr(head.diffPtrToHead(end))
+	end.prev = uintptr(end.diffPtrToHead(head))
 
 }
 
@@ -189,24 +200,26 @@ func (head *ListHead) ptr() unsafe.Pointer {
 
 }
 
+func (head *ListHead) OffetNext() uintptr {
+
+	return head.next
+
+}
+func (head *ListHead) OffetPrev() uintptr {
+
+	return head.prev
+
+}
+
 func (head *ListHead) DirectNext() *ListHead {
 	return head.directNext()
 }
 
 func (head *ListHead) directNext() (next *ListHead) {
 
-	if head.next == unsafe.Pointer(nil) {
+	if head.next == uintptr(0) {
 		return head
 	}
-	//i := int(uintptr(head.next))
-
-	// FIXME: enable later?
-	// if i > 0 && i > 0x1000000 {
-	// 	return head
-	// }
-	// if i < 0 && i < -(0x1000000) {
-	// 	return head
-	// }
 
 	return (*ListHead)(unsafe.Add(head.ptr(), int(uintptr(head.next))))
 }
