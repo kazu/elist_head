@@ -20,6 +20,10 @@ func RollbacksharedModeTraverse(prev list_head.TravOpt) {
 	sharedModeTraverse.Option(prev)
 }
 
+func SharedTrav(trav list_head.TravOpt) []list_head.TravOpt {
+	return sharedModeTraverse.Option(trav)
+}
+
 func StoreListHead(dst *unsafe.Pointer, src *ListHead) {
 	atomic.StorePointer(dst,
 		unsafe.Pointer(src))
