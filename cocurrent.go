@@ -7,7 +7,6 @@
 package elist_head
 
 import (
-	"fmt"
 	"sync/atomic"
 	"unsafe"
 
@@ -107,28 +106,32 @@ func RepaireSliceAfterCopy(sHead, sTail unsafe.Pointer, dHead unsafe.Pointer, si
 
 			if iPtr == cHead.prev {
 				t := cHead.directPrev()
-				// t.next = unsafe.Add(t.next, moved)
-				// dHead.prev = unsafe.Add(dHead.prev, -moved)
-				t.next = IncPointer(t.next, moved)
+				//t.next = IncPointer(t.next, moved)
+				if !CasIncPointer(&t.next, uintptr(cur)-uintptr(unsafe.Pointer(t)), moved) {
+					panic("duplicated rewrite outside ListHead")
+				}
+
 				dHead.prev = IncPointer(dHead.prev, -moved)
 
 				tt := dHead.directPrev()
 				succ := tt == t && tt.directNext() != cHead
 				if !succ {
-					fmt.Printf("invalid prev")
+					panic("invalid ListHead.prev")
 				}
 
 			} else if iPtr == cHead.next {
 				t := cHead.directNext()
-				// t.prev = unsafe.Add(t.prev, moved)
-				// dHead.next = unsafe.Add(dHead.next, -moved)
-				t.prev = IncPointer(t.prev, moved)
+
+				//t.prev = IncPointer(t.prev, moved)
+				if !CasIncPointer(&t.prev, uintptr(cur)-uintptr(unsafe.Pointer(t)), moved) {
+					panic("duplicated rewrite outside ListHead")
+				}
 				dHead.next = IncPointer(dHead.next, -moved)
 
 				tt := dHead.directNext()
 				succ := tt == t && tt.directPrev() != cHead
 				if !succ {
-					fmt.Printf("invalid next")
+					panic("invalid ListHead.next")
 				}
 			}
 		}

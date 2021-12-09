@@ -3,6 +3,7 @@ package elist_head
 import (
 	"errors"
 	"fmt"
+	"sync/atomic"
 	"unsafe"
 
 	list_head "github.com/kazu/loncha/lista_encabezado"
@@ -276,4 +277,14 @@ func IncPointer(t uintptr, moved int) uintptr {
 	tOld += moved
 	//	atomic.StorePointer(t, unsafe.Pointer(uintptr(tOld)))
 	return uintptr(tOld)
+}
+
+func CasIncPointer(t *uintptr, same uintptr, moved int) bool {
+
+	// tOld := int(t)
+	// tOld += moved
+	// return uintptr(tOld)
+
+	return atomic.CompareAndSwapUintptr(t, same, uintptr(int(same)+moved))
+
 }
