@@ -11,11 +11,10 @@ import (
 
 func Test_InserBefore(t *testing.T) {
 
-	lists := make([]elist_head.ListHead, 2)
-	elist_head.InitAsEmpty(&lists[0], &lists[1])
+	list := elist_head.NewEmptyList()
 
 	cur := elist_head.ListHead{}
-	lists[1].InsertBefore(&cur)
+	list.Tail().InsertBefore(&cur)
 	assert.Same(t, &cur, cur.Prev().Next())
 	prev := elist_head.ListHead{}
 
@@ -29,11 +28,10 @@ func Test_InserBefore(t *testing.T) {
 }
 
 func Test_Delete(t *testing.T) {
-	lists := make([]elist_head.ListHead, 2)
-	elist_head.InitAsEmpty(&lists[0], &lists[1])
+	list := elist_head.NewEmptyList()
 	cur := elist_head.ListHead{}
 
-	lists[1].InsertBefore(&cur)
+	list.Tail().InsertBefore(&cur)
 
 	p := cur.Prev()
 

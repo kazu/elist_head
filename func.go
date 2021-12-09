@@ -10,7 +10,7 @@ type List interface {
 	FromListHead(*ListHead) List
 }
 
-func ElementOf(l List, head *ListHead) unsafe.Pointer {
+func __ElementOf(l List, head *ListHead) unsafe.Pointer {
 	if head == nil || l == nil {
 		return nil
 	}
@@ -24,4 +24,8 @@ func _ElementOf(l List, head *ListHead) unsafe.Pointer {
 	}
 
 	return unsafe.Pointer(uintptr(unsafe.Pointer(head)) - l.Offset())
+}
+
+func ElementOf(head unsafe.Pointer, offset uintptr) unsafe.Pointer {
+	return unsafe.Pointer(uintptr(head) - offset)
 }

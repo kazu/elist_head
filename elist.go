@@ -91,6 +91,25 @@ type ListHead struct {
 	next uintptr
 }
 
+type initedListHead [2]ListHead
+
+// NewEmptyList ... make Empty List . this has only head and tail terminater.
+//   elist_head require head/tail terminater for list operation.
+func NewEmptyList() initedListHead {
+
+	list := initedListHead{}
+	InitAsEmpty(&list[0], &list[1])
+	return list
+}
+
+func (l initedListHead) Head() *ListHead {
+	return &l[0]
+}
+
+func (l initedListHead) Tail() *ListHead {
+	return &l[1]
+}
+
 func (head *ListHead) Ptr() unsafe.Pointer {
 	return unsafe.Pointer(head)
 }
