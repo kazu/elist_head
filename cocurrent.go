@@ -7,6 +7,7 @@
 package elist_head
 
 import (
+	"errors"
 	"sync/atomic"
 	"unsafe"
 
@@ -19,8 +20,8 @@ func RollbacksharedModeTraverse(prev list_head.TravOpt) {
 	sharedModeTraverse.Option(prev)
 }
 
-func SharedTrav(trav list_head.TravOpt) []list_head.TravOpt {
-	return sharedModeTraverse.Option(trav)
+func SharedTrav(travs ...list_head.TravOpt) []list_head.TravOpt {
+	return sharedModeTraverse.Option(travs...)
 }
 
 func StoreListHead(dst *unsafe.Pointer, src *ListHead) {
@@ -76,7 +77,7 @@ func OuterPtrs(sHead, sTail unsafe.Pointer, dHead unsafe.Pointer, size int, offs
 	return
 }
 
-func RepaireSliceAfterCopy(sHead, sTail unsafe.Pointer, dHead unsafe.Pointer, size int, offset int) {
+func RepaireSliceAfterCopy(sHead, sTail unsafe.Pointer, dHead unsafe.Pointer, size int, offset int) error {
 
 	start := uintptr(sHead)
 	last := uintptr(sTail) + uintptr(size)
@@ -108,7 +109,7 @@ func RepaireSliceAfterCopy(sHead, sTail unsafe.Pointer, dHead unsafe.Pointer, si
 				t := cHead.directPrev()
 				//t.next = IncPointer(t.next, moved)
 				if !CasIncPointer(&t.next, uintptr(cur)-uintptr(unsafe.Pointer(t)), moved) {
-					panic("duplicated rewrite outside ListHead")
+					return errors.New("duplicated rewrite outside ListHead")
 				}
 
 				dHead.prev = IncPointer(dHead.prev, -moved)
@@ -116,7 +117,7 @@ func RepaireSliceAfterCopy(sHead, sTail unsafe.Pointer, dHead unsafe.Pointer, si
 				tt := dHead.directPrev()
 				succ := tt == t && tt.directNext() != cHead
 				if !succ {
-					panic("invalid ListHead.prev")
+					return errors.New("invalid ListHead.prev")
 				}
 
 			} else if iPtr == cHead.next {
@@ -124,18 +125,18 @@ func RepaireSliceAfterCopy(sHead, sTail unsafe.Pointer, dHead unsafe.Pointer, si
 
 				//t.prev = IncPointer(t.prev, moved)
 				if !CasIncPointer(&t.prev, uintptr(cur)-uintptr(unsafe.Pointer(t)), moved) {
-					panic("duplicated rewrite outside ListHead")
+					return errors.New("duplicated rewrite outside ListHead")
 				}
 				dHead.next = IncPointer(dHead.next, -moved)
 
 				tt := dHead.directNext()
 				succ := tt == t && tt.directPrev() != cHead
 				if !succ {
-					panic("invalid ListHead.next")
+					return errors.New("invalid ListHead.next")
 				}
 			}
 		}
 		cntChanged++
 	}
-
+	return nil
 }
