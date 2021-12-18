@@ -123,3 +123,36 @@ func Benchmark_Next(b *testing.B) {
 	})
 
 }
+
+func Test_ReplaceSlice(t *testing.T) {
+
+	list := elist_head.NewEmptyList()
+
+	//	list.Tail().InsertBefore(&cur)
+	first := &elist_head.ListHead{}
+	last := &elist_head.ListHead{}
+
+	elms := make([]elist_head.ListHead, 10)
+
+	list.Tail().InsertBefore(first)
+	for i := range elms {
+		list.Tail().InsertBefore(&elms[i])
+	}
+	list.Tail().InsertBefore(last)
+
+	elms2 := make([]elist_head.ListHead, 10)
+	elist_head.InitAsEmpty(&elms2[0], &elms2[9])
+
+	for i := range elms2 {
+		if i == 0 || i == 9 {
+			continue
+		}
+		elms2[9].InsertBefore(&elms[i])
+	}
+
+	first.ReplaceNext(&elms2[0], &elms2[9], last)
+
+	assert.Same(t, first.Next(), &elms2[0])
+	assert.Same(t, last.Prev(), &elms2[9])
+
+}

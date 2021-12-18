@@ -110,6 +110,11 @@ func (l initedListHead) Tail() *ListHead {
 	return &l[1]
 }
 
+func (l initedListHead) Insert(nextHead *ListHead, nextTail *ListHead) (err error) {
+
+	return l[0].ReplaceNext(nextHead, nextTail, &l[1])
+}
+
 func (head *ListHead) Ptr() unsafe.Pointer {
 	return unsafe.Pointer(head)
 }

@@ -8,6 +8,7 @@ package elist_head
 
 import (
 	"errors"
+	"fmt"
 	"sync/atomic"
 	"unsafe"
 
@@ -117,7 +118,8 @@ func RepaireSliceAfterCopy(sHead, sTail unsafe.Pointer, dHead unsafe.Pointer, si
 				tt := dHead.directPrev()
 				succ := tt == t && tt.directNext() != cHead
 				if !succ {
-					return errors.New("invalid ListHead.prev")
+					return fmt.Errorf("invalid ListHead.prev oldHead.direcvPrev()=%016p ?== newHead.directPrev()=%016p or newHead.directNext()=%016p ?== oldHead=%016p ",
+						t, tt, tt.directNext(), cHead)
 				}
 
 			} else if iPtr == cHead.next {

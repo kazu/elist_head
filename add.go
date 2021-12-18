@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sync"
 	"sync/atomic"
+	"unsafe"
 
 	list_head "github.com/kazu/loncha/lista_encabezado"
 )
@@ -83,6 +84,55 @@ func (head *ListHead) insertBefore(new *ListHead, opts ...list_head.TravOpt) {
 	})
 	if err != nil {
 		mode.SetError(err)
+	}
+	return
+}
+
+// ReplaceNext ... replace next element to new multiple list
+func (head *ListHead) ReplaceNext(nextHead *ListHead, nextTail *ListHead, next *ListHead) (err error) {
+
+	// MENTION: use mode, enable this
+	// mode := list_head.NewTraverse()
+	// defer mode.Error()
+	// for _, opt := range opts {
+	// 	opt(mode)
+	// }
+
+	// if !new.IsSingle() {
+	// 	mode.SetError(errors.New("Warn: insert element must be single node"))
+	// }
+
+	// next := head
+	// prev := head.directPrev()
+
+	err = list_head.Retry(100, func(retry int) (finish bool, err error) {
+		oldNext := head.next
+		oldNewNextPrev := next.prev
+
+		rollback := func(head, next *ListHead) {
+			atomic.StoreUintptr(&head.next, oldNext)
+			atomic.StoreUintptr(&next.prev, oldNewNextPrev)
+		}
+		_ = rollback
+		atomic.StoreUintptr(&nextHead.prev, uintptr(nextHead.diffPtrToHead(head)))
+		atomic.StoreUintptr(&nextTail.next, uintptr(nextTail.diffPtrToHead(next)))
+
+		if !Cas(&head.next, (*ListHead)(unsafe.Pointer(oldNext)), (*ListHead)(head.diffPtrToHead(nextHead))) {
+			goto ROLLBACK
+		}
+
+		if !Cas(&next.prev, (*ListHead)(unsafe.Pointer(oldNewNextPrev)), (*ListHead)(next.diffPtrToHead(nextTail))) {
+			goto ROLLBACK
+		}
+
+		return true, err
+
+	ROLLBACK:
+		rollback(head, next)
+		return false, NewError(ErrTCasConflictOnAdd, errors.New("cas conflict in Replace"))
+	})
+	if err != nil {
+		//mode.SetError(err)
 	}
 	return
 }
