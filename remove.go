@@ -53,11 +53,11 @@ func (head *ListHead) Delete(opts ...func(*ListHead) error) (result *ListHead, e
 		opts = append(opts, InitAfterSafety(100))
 	}
 	for _, opt := range opts {
-		if opt(head) != nil {
+		if e = opt(head); e != nil {
 			break
 		}
 	}
-	return nil, nil
+	return nil, e
 }
 
 func (head *ListHead) MarkForDelete(opts ...list_head.TravOpt) (err error) {

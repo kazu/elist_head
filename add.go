@@ -65,7 +65,7 @@ func (head *ListHead) insertBefore(new *ListHead, opts ...list_head.TravOpt) {
 	}
 
 	if !new.IsSingle() {
-		mode.SetError(errors.New("Warn: insert element must be single node"))
+		mode.SetError(errors.New("Warn: elist_head ListHead.insert element must be single node"))
 	}
 
 	next := head
