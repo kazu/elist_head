@@ -115,6 +115,7 @@ func (l initedListHead) Insert(nextHead *ListHead, nextTail *ListHead) (err erro
 	return l[0].ReplaceNext(nextHead, nextTail, &l[1])
 }
 
+//go:nocheckptr
 func (head *ListHead) Ptr() unsafe.Pointer {
 	return unsafe.Pointer(head)
 }
