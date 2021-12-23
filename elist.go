@@ -8,6 +8,7 @@ package elist_head
 
 import (
 	"errors"
+	"sync/atomic"
 	"unsafe"
 
 	list_head "github.com/kazu/loncha/lista_encabezado"
@@ -242,11 +243,8 @@ func (head *ListHead) DirectNext() *ListHead {
 
 func (head *ListHead) directNext() (next *ListHead) {
 
-	if head.next == uintptr(0) {
-		return head
-	}
-
-	return (*ListHead)(unsafe.Add(head.ptr(), int(uintptr(head.next))))
+	nDiff := atomic.LoadUintptr(&head.next)
+	return (*ListHead)(unsafe.Add(head.ptr(), int(nDiff)))
 }
 
 func (head *ListHead) nextWaitNoMark() (next *ListHead) {
@@ -316,7 +314,8 @@ func (head *ListHead) DirectPrev() *ListHead {
 
 func (head *ListHead) directPrev() (next *ListHead) {
 
-	return (*ListHead)(unsafe.Add(head.ptr(), int(uintptr(head.prev))))
+	pDiff := atomic.LoadUintptr(&head.prev)
+	return (*ListHead)(unsafe.Add(head.ptr(), int(pDiff)))
 
 }
 
