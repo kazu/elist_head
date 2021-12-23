@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"sync"
 	"sync/atomic"
-	"unsafe"
 
 	list_head "github.com/kazu/loncha/lista_encabezado"
 )
@@ -117,11 +116,11 @@ func (head *ListHead) ReplaceNext(nextHead *ListHead, nextTail *ListHead, next *
 		atomic.StoreUintptr(&nextHead.prev, uintptr(nextHead.diffPtrToHead(head)))
 		atomic.StoreUintptr(&nextTail.next, uintptr(nextTail.diffPtrToHead(next)))
 
-		if !Cas(&head.next, (*ListHead)(unsafe.Pointer(oldNext)), (*ListHead)(head.diffPtrToHead(nextHead))) {
+		if !Cas(&head.next, oldNext, uintptr(head.diffPtrToHead(nextHead))) {
 			goto ROLLBACK
 		}
 
-		if !Cas(&next.prev, (*ListHead)(unsafe.Pointer(oldNewNextPrev)), (*ListHead)(next.diffPtrToHead(nextTail))) {
+		if !Cas(&next.prev, oldNewNextPrev, uintptr(next.diffPtrToHead(nextTail))) {
 			goto ROLLBACK
 		}
 
@@ -199,13 +198,13 @@ func listAddWitCas(new, prev, next *ListHead, fn func(*ListHead) *sync.RWMutex) 
 	a := prev.diffPtrToHead(next)
 	b := prev.diffPtrToHead(new)
 	_, _ = a, b
-	if !Cas(&prev.next, (*ListHead)(prev.diffPtrToHead(next)), (*ListHead)(prev.diffPtrToHead(new))) {
+	if !Cas(&prev.next, uintptr(prev.diffPtrToHead(next)), uintptr(prev.diffPtrToHead(new))) {
 		goto ROLLBACK
 	}
-	if !Cas(&next.prev, (*ListHead)(next.diffPtrToHead(prev)), (*ListHead)(next.diffPtrToHead(new))) {
+	if !Cas(&next.prev, uintptr(next.diffPtrToHead(prev)), uintptr(next.diffPtrToHead(new))) {
 		//if !Cas(&next.prev, prev, new) {
 
-		if !Cas(&prev.next, (*ListHead)(prev.diffPtrToHead(new)), (*ListHead)(prev.diffPtrToHead(next))) {
+		if !Cas(&prev.next, uintptr(prev.diffPtrToHead(new)), uintptr(prev.diffPtrToHead(next))) {
 			//if !Cas(&prev.next, new, next) {
 			_ = "fail rollback?"
 		}

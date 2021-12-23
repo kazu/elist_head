@@ -162,7 +162,7 @@ func (head *ListHead) MarkForDelete(opts ...list_head.TravOpt) (err error) {
 			if next.IsMarked() {
 				next = next2
 			}
-			t = Cas(prevNexts[i], (*ListHead)(prevs[i].diffPtrToHead(head)), (*ListHead)(prevs[i].diffPtrToHead(next)))
+			t = Cas(prevNexts[i], uintptr(prevs[i].diffPtrToHead(head)), uintptr(prevs[i].diffPtrToHead(next)))
 			//t = Cas(prevNexts[i], l, next)
 		}
 
@@ -177,7 +177,7 @@ func (head *ListHead) MarkForDelete(opts ...list_head.TravOpt) (err error) {
 				prev = prev2
 			}
 
-			t = Cas(np, (*ListHead)(nexts[i].diffPtrToHead(head)), (*ListHead)(nexts[i].diffPtrToHead(prev)))
+			t = Cas(np, uintptr(nexts[i].diffPtrToHead(head)), uintptr(nexts[i].diffPtrToHead(prev)))
 			//t = Cas(np, l, prev)
 		}
 		errs := []error{}

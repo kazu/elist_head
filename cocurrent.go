@@ -29,10 +29,16 @@ func StoreListHead(dst *unsafe.Pointer, src *ListHead) {
 	atomic.StorePointer(dst,
 		unsafe.Pointer(src))
 }
-func Cas(target *uintptr, old, new *ListHead) bool {
+func _Cas(target *uintptr, old, new *ListHead) bool {
 	return atomic.CompareAndSwapUintptr(target,
 		uintptr(unsafe.Pointer(old)),
 		uintptr(unsafe.Pointer(new)))
+}
+
+func Cas(target *uintptr, old, new uintptr) bool {
+	return atomic.CompareAndSwapUintptr(target,
+		old,
+		new)
 }
 
 func MarkListHead(target *uintptr, old uintptr) bool {
