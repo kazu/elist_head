@@ -50,7 +50,6 @@ func (head *ListHead) InsertBefore(new *ListHead, opts ...list_head.TravOpt) (*L
 	head.insertBefore(nNode, opts...)
 	return head, nil
 
-	return nil, nil
 
 }
 

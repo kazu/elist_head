@@ -1,6 +1,7 @@
 package elist_head_test
 
 import (
+	"runtime"
 	"testing"
 	"unsafe"
 
@@ -83,6 +84,10 @@ func Test_CopySlice(t *testing.T) {
 
 }
 
+var benchmarkNextNormal *list_head.ListHead
+var benchmarkNextRelative *elist_head.ListHead
+
+// One operation traverses 10000 links; fixture construction is not timed.
 func Benchmark_Next(b *testing.B) {
 
 	l := list_head.ListHead{}
@@ -103,24 +108,30 @@ func Benchmark_Next(b *testing.B) {
 		el.Prev().Next().InsertBefore(ee)
 	}
 
-	b.ResetTimer()
 	b.Run("list_head", func(b *testing.B) {
-		cur := &l
-		b.StartTimer()
-		for i := 0; i < 10000; i++ {
-			cur = cur.Next()
+		b.ReportAllocs()
+		b.ResetTimer()
+		for iteration := 0; iteration < b.N; iteration++ {
+			cur := &l
+			for i := 0; i < 10000; i++ {
+				cur = cur.Next()
+			}
+			benchmarkNextNormal = cur
 		}
-		b.StopTimer()
 	})
-	b.ResetTimer()
 	b.Run("elist_head", func(b *testing.B) {
-		cur := el
-		b.StartTimer()
-		for i := 0; i < 10000; i++ {
-			cur = cur.Next()
+		b.ReportAllocs()
+		b.ResetTimer()
+		for iteration := 0; iteration < b.N; iteration++ {
+			cur := el
+			for i := 0; i < 10000; i++ {
+				cur = cur.Next()
+			}
+			benchmarkNextRelative = cur
 		}
-		b.StopTimer()
 	})
+	runtime.KeepAlive(items)
+	runtime.KeepAlive(els)
 
 }
 

@@ -1,6 +1,6 @@
 module github.com/kazu/elist_head
 
-go 1.17
+go 1.27.1
 
 require (
 	github.com/kazu/loncha v0.4.5

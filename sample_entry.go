@@ -28,7 +28,7 @@ func (s *SampleEntry) fromListHead(l *ListHead) *SampleEntry {
 	return SampleEntryFromListHead(l)
 }
 
-func (s *SampleEntry) FromListHead(l *ListHead) List {
+func (s *SampleEntry) FromListHead(l *ListHead) *SampleEntry {
 	return s.fromListHead(l)
 }
 
@@ -36,16 +36,10 @@ func (s *SampleEntry) Prev() *SampleEntry {
 	return s.fromListHead(s.ListHead.Prev())
 }
 func (s *SampleEntry) Next() *SampleEntry {
-	return s.fromListHead(s.ListHead.Prev())
+	return s.fromListHead(s.ListHead.Next())
 }
 
 func (s *SampleEntry) InsertBefore(n *SampleEntry) (err error) {
 	_, err = s.ListHead.InsertBefore(&n.ListHead)
 	return
 }
-
-// type List interface {
-// 	Offset() uintptr
-// 	PtrListHead() *ListHead
-// 	FromListHead(*ListHead) List
-//}

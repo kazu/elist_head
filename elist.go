@@ -95,7 +95,8 @@ type ListHead struct {
 type initedListHead [2]ListHead
 
 // NewEmptyList ... make Empty List . this has only head and tail terminater.
-//   elist_head require head/tail terminater for list operation.
+//
+//	elist_head require head/tail terminater for list operation.
 func NewEmptyList() initedListHead {
 
 	list := initedListHead{}
@@ -103,15 +104,15 @@ func NewEmptyList() initedListHead {
 	return list
 }
 
-func (l initedListHead) Head() *ListHead {
+func (l *initedListHead) Head() *ListHead {
 	return &l[0]
 }
 
-func (l initedListHead) Tail() *ListHead {
+func (l *initedListHead) Tail() *ListHead {
 	return &l[1]
 }
 
-func (l initedListHead) Insert(nextHead *ListHead, nextTail *ListHead) (err error) {
+func (l *initedListHead) Insert(nextHead *ListHead, nextTail *ListHead) (err error) {
 
 	return l[0].ReplaceNext(nextHead, nextTail, &l[1])
 }
@@ -150,17 +151,17 @@ func NewEmpty() *ListHead {
 
 // head.prev/next = thead
 // head.prev = head.diffPtrToHead(thead)
-func (head *ListHead) diffPtrToHead(thead *ListHead) unsafe.Pointer {
+func (head *ListHead) diffPtrToHead(thead *ListHead) uintptr {
 
 	t := unsafe.Pointer(thead)
 	return head.diffPtrTo(t)
 
 }
 
-func (head *ListHead) diffPtrTo(t unsafe.Pointer) unsafe.Pointer {
+func (head *ListHead) diffPtrTo(t unsafe.Pointer) uintptr {
 	p := unsafe.Pointer(head)
 
-	return unsafe.Add(t, -int(uintptr(p)))
+	return uintptr(t) - uintptr(p)
 
 }
 
@@ -244,6 +245,9 @@ func (head *ListHead) DirectNext() *ListHead {
 func (head *ListHead) directNext() (next *ListHead) {
 
 	nDiff := atomic.LoadUintptr(&head.next)
+	if nDiff&1 != 0 {
+		nDiff--
+	}
 	return (*ListHead)(unsafe.Add(head.ptr(), int(nDiff)))
 }
 
@@ -315,6 +319,9 @@ func (head *ListHead) DirectPrev() *ListHead {
 func (head *ListHead) directPrev() (next *ListHead) {
 
 	pDiff := atomic.LoadUintptr(&head.prev)
+	if pDiff&1 != 0 {
+		pDiff--
+	}
 	return (*ListHead)(unsafe.Add(head.ptr(), int(pDiff)))
 
 }
