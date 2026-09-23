@@ -84,6 +84,7 @@ func OuterPtrs(sHead, sTail unsafe.Pointer, dHead unsafe.Pointer, size int, offs
 	return
 }
 
+//go:nocheckptr
 func RepaireSliceAfterCopy(sHead, sTail unsafe.Pointer, dHead unsafe.Pointer, size int, offset int) error {
 
 	start := uintptr(sHead)

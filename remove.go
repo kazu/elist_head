@@ -60,6 +60,7 @@ func (head *ListHead) Delete(opts ...func(*ListHead) error) (result *ListHead, e
 	return nil, e
 }
 
+//go:nocheckptr
 func (head *ListHead) MarkForDelete(opts ...list_head.TravOpt) (err error) {
 
 	mode := list_head.NewTraverse()
@@ -74,8 +75,6 @@ func (head *ListHead) MarkForDelete(opts ...list_head.TravOpt) (err error) {
 	mu4Add.Lock()
 	defer mu4Add.Unlock()
 
-	mask := uintptr(^uint(0)) ^ 1
-
 	var (
 		ErrDeketeStep0 error = errors.New("fail step 0")
 		ErrDeketeStep1 error = errors.New("fail step 1")
@@ -85,8 +84,8 @@ func (head *ListHead) MarkForDelete(opts ...list_head.TravOpt) (err error) {
 	_, _ = ErrDeketeStep2, ErrDeketeStep3
 
 	err = list_head.Retry(100, func(retry int) (fin bool, err error) {
-		prev1 := (*ListHead)(unsafe.Add(head.ptr(), int(uintptr(head.prev)&mask)))
-		next1 := (*ListHead)(unsafe.Add(head.ptr(), int(uintptr(head.next)&mask)))
+		prev1 := head.directPrev()
+		next1 := head.directNext()
 
 		if mode.Mu != nil {
 			// FIXME: later enable
@@ -154,7 +153,7 @@ func (head *ListHead) MarkForDelete(opts ...list_head.TravOpt) (err error) {
 		for i, pn := range prevNexts {
 			// prev1 := (*ListHead)(unsafe.Add(l.ptr(), int(uintptr(l.prev)&mask)))
 			//  *pn != l
-			if unsafe.Add(unsafe.Pointer(prevs[i]), int(uintptr(*pn))) != unsafe.Pointer(head) {
+			if uintptr(unsafe.Pointer(prevs[i]))+uintptr(*pn) != uintptr(unsafe.Pointer(head)) {
 				continue
 			}
 
@@ -168,7 +167,7 @@ func (head *ListHead) MarkForDelete(opts ...list_head.TravOpt) (err error) {
 
 		for i, np := range nextPrevs {
 			//_ = i
-			if unsafe.Add(unsafe.Pointer(nexts[i]), int(uintptr(*np))) != unsafe.Pointer(head) {
+			if uintptr(unsafe.Pointer(nexts[i]))+uintptr(*np) != uintptr(unsafe.Pointer(head)) {
 				continue
 			}
 
@@ -190,11 +189,11 @@ func (head *ListHead) MarkForDelete(opts ...list_head.TravOpt) (err error) {
 			} else {
 				base = nexts[i%2]
 			}
-			a := unsafe.Add(unsafe.Pointer(base), int(uintptr(*toL)))
-			b := unsafe.Pointer(head)
+			a := uintptr(unsafe.Pointer(base)) + uintptr(*toL)
+			b := uintptr(unsafe.Pointer(head))
 			_, _ = a, b
 
-			if unsafe.Add(unsafe.Pointer(base), int(uintptr(*toL))) == unsafe.Pointer(head) {
+			if uintptr(unsafe.Pointer(base))+uintptr(*toL) == uintptr(unsafe.Pointer(head)) {
 				//return false, ErrDeketeStep2
 				errs = append(errs, ErrDeketeStep2)
 
@@ -219,6 +218,7 @@ func (head *ListHead) MarkForDelete(opts ...list_head.TravOpt) (err error) {
 	return err
 }
 
+//go:nocheckptr
 func PrevNoM(head *ListHead) *ListHead {
 
 	prev := uintptr(head.prev)
@@ -233,6 +233,7 @@ func PrevNoM(head *ListHead) *ListHead {
 
 }
 
+//go:nocheckptr
 func NextNoM(head *ListHead) *ListHead {
 	next := uintptr(head.next)
 	mask := uintptr(^uint(0)) ^ 1

@@ -242,6 +242,7 @@ func (head *ListHead) DirectNext() *ListHead {
 	return head.directNext()
 }
 
+//go:nocheckptr
 func (head *ListHead) directNext() (next *ListHead) {
 
 	nDiff := atomic.LoadUintptr(&head.next)
@@ -316,6 +317,7 @@ func (head *ListHead) DirectPrev() *ListHead {
 	return head.directPrev()
 }
 
+//go:nocheckptr
 func (head *ListHead) directPrev() (next *ListHead) {
 
 	pDiff := atomic.LoadUintptr(&head.prev)
