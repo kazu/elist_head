@@ -35,7 +35,7 @@ func (head *ListHead) isMarkedForDelete() (marked bool, err error) {
 		return false, errors.New("next is nil")
 	}
 
-	if uintptr(head.next)&1 > 0 {
+	if atomic.LoadUintptr(&head.next)&1 > 0 {
 		return true, nil
 	}
 	return false, nil
