@@ -295,3 +295,37 @@ func TestMarkForDeleteRetriesWhileLinkedTo(t *testing.T) {
 	names := map[*elist.ListHead]string{head: "head", p: "p", a: "a", y: "y", n: "n", tail: "tail"}
 	assertLinked(t, names, head, tail, "p", "y")
 }
+
+// Nodes p, a and y lie in this order between head and tail. While a is being
+// deleted and p and y still link to it, a is not safe to reuse; after the
+// delete it is.
+func TestIsSafetyWhileNeighborsLinkTo(t *testing.T) {
+	entries := make([]typedEntry, 5)
+	head, tail := &entries[0].ListHead, &entries[4].ListHead
+	elist.InitAsEmpty(head, tail)
+	p, a, y := &entries[1].ListHead, &entries[2].ListHead, &entries[3].ListHead
+	for _, x := range []*elist.ListHead{p, a, y} {
+		if _, err := tail.InsertBefore(x); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	s := newStepper(t)
+	stop := s.stopAt("del.marked", a)
+	done, errA := goDo(func() error { return a.MarkForDelete() })
+	stop.waitReached(t)
+	during, _ := a.IsSafety()
+	stop.Release()
+	waitClosed(t, done, "delete a")
+	if *errA != nil {
+		t.Fatalf("delete a: %v", *errA)
+	}
+	after, _ := a.IsSafety()
+
+	if during {
+		t.Error("IsSafety() = true while p and y link to a")
+	}
+	if !after {
+		t.Error("IsSafety() = false after a is deleted")
+	}
+}

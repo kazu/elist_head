@@ -281,6 +281,9 @@ func (head *ListHead) IsSafety() (bool, error) {
 	if next == head {
 		return false, nil
 	}
+	if prev.directNext() == head || next.directPrev() == head {
+		return false, nil
+	}
 	return true, nil
 
 }
