@@ -27,3 +27,19 @@ func TestIsMarkedDuringInsert(t *testing.T) {
 	}
 	<-done
 }
+
+func TestNoMDuringInsert(t *testing.T) {
+	entries := make([]typedEntry, 3)
+	head, tail := &entries[0].ListHead, &entries[2].ListHead
+	elist.InitAsEmpty(head, tail)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		elist.NextNoM(head)
+		elist.PrevNoM(tail)
+	}()
+	if _, err := tail.InsertBefore(&entries[1].ListHead); err != nil {
+		t.Fatal(err)
+	}
+	<-done
+}

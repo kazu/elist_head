@@ -223,7 +223,7 @@ func (head *ListHead) MarkForDelete(opts ...list_head.TravOpt) (err error) {
 //go:nocheckptr
 func PrevNoM(head *ListHead) *ListHead {
 
-	prev := uintptr(head.prev)
+	prev := atomic.LoadUintptr(&head.prev)
 	mask := uintptr(^uint(0)) ^ 1
 	if uintptr(prev)&1 == 0 {
 		return head.directPrev()
@@ -237,7 +237,7 @@ func PrevNoM(head *ListHead) *ListHead {
 
 //go:nocheckptr
 func NextNoM(head *ListHead) *ListHead {
-	next := uintptr(head.next)
+	next := atomic.LoadUintptr(&head.next)
 	mask := uintptr(^uint(0)) ^ 1
 	if uintptr(next)&1 == 0 {
 		return head.directNext()
