@@ -252,3 +252,46 @@ func TestMarkForDeleteKeepsInsertBeforeNode(t *testing.T) {
 	names := map[*elist.ListHead]string{head: "head", p: "p", a: "a", y: "y", n: "n", tail: "tail"}
 	assertLinked(t, names, head, tail, "p", "n", "y")
 }
+
+// Nodes p, a and y lie in this order between head and tail. Inserting n
+// before a stops before its first CAS. Deleting a marks its links and stops
+// before it changes p.next from a to y. The insert then changes p.next to n,
+// fails on the mark of a.prev and stops before putting p.next back, so the
+// delete fails to change p.next and stops before its check. When the insert
+// has put p.next back to a and given up, and the delete finishes, p must be
+// linked to y.
+func TestMarkForDeleteRetriesWhileLinkedTo(t *testing.T) {
+	entries := make([]typedEntry, 6)
+	head, tail := &entries[0].ListHead, &entries[5].ListHead
+	elist.InitAsEmpty(head, tail)
+	p, a, y, n := &entries[1].ListHead, &entries[2].ListHead, &entries[3].ListHead, &entries[4].ListHead
+	for _, x := range []*elist.ListHead{p, a, y} {
+		if _, err := tail.InsertBefore(x); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	s := newStepper(t)
+	ins := s.stopAt("add.cas1", n)
+	doneI, _ := goDo(func() error { _, err := a.InsertBefore(n); return err })
+	ins.waitReached(t)
+	relink := s.stopAt("del.relink", a)
+	doneD, errD := goDo(func() error { return a.MarkForDelete() })
+	relink.waitReached(t)
+	rollback := s.stopAt("add.rollback", n)
+	ins.Release()
+	rollback.waitReached(t)
+	check := s.stopAt("del.check", a)
+	relink.Release()
+	check.waitReached(t)
+	rollback.Release()
+	waitClosed(t, doneI, "insert n")
+	check.Release()
+	waitClosed(t, doneD, "delete a")
+	if *errD != nil {
+		t.Fatalf("delete a: %v", *errD)
+	}
+
+	names := map[*elist.ListHead]string{head: "head", p: "p", a: "a", y: "y", n: "n", tail: "tail"}
+	assertLinked(t, names, head, tail, "p", "y")
+}

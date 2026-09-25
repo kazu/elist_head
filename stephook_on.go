@@ -16,6 +16,7 @@ import "sync/atomic"
 //   - "del.begin" (node, prev, next): MarkForDelete read the links of node; before they are marked.
 //   - "del.nextMarked" (node, prev, next): node.next is marked; before node.prev is marked.
 //   - "del.marked" (node, prev, next): both links of node are marked.
+//   - "del.relink" (node, prev, next): prev.next was node; before it is changed to next.
 //   - "del.check" (node, prev, next): the links to node are changed; before they are checked.
 type StepHook func(point string, a, b, c *ListHead)
 

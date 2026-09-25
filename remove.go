@@ -164,6 +164,7 @@ func (head *ListHead) MarkForDelete(opts ...list_head.TravOpt) (err error) {
 			if next.IsMarked() {
 				next = next2
 			}
+			stepAt("del.relink", head, prevs[i], next)
 			t = Cas(prevNexts[i], uintptr(prevs[i].diffPtrToHead(head)), uintptr(prevs[i].diffPtrToHead(next)))
 			//t = Cas(prevNexts[i], l, next)
 		}
@@ -198,8 +199,7 @@ func (head *ListHead) MarkForDelete(opts ...list_head.TravOpt) (err error) {
 			_, _ = a, b
 
 			if uintptr(unsafe.Pointer(base))+uintptr(*toL) == uintptr(unsafe.Pointer(head)) {
-				//return false, ErrDeketeStep2
-				errs = append(errs, ErrDeketeStep2)
+				return false, ErrDeketeStep2
 
 			} else {
 				errs = append(errs, nil)
