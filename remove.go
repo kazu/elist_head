@@ -86,6 +86,7 @@ func (head *ListHead) MarkForDelete(opts ...list_head.TravOpt) (err error) {
 	err = list_head.Retry(100, func(retry int) (fin bool, err error) {
 		prev1 := head.directPrev()
 		next1 := head.directNext()
+		stepAt("del.begin", head, prev1, next1)
 
 		if mode.Mu != nil {
 			// FIXME: later enable
@@ -114,6 +115,7 @@ func (head *ListHead) MarkForDelete(opts ...list_head.TravOpt) (err error) {
 			//AddRecoverState("remove: retry marked next")
 			return false, ErrDeketeStep0
 		}
+		stepAt("del.nextMarked", head, prev1, next1)
 		if !MarkListHead(&head.prev, uintptr(head.diffPtrToHead(prev))) {
 			//if !MarkListHead(&l.prev, unsafe.Pointer(prev)) {
 

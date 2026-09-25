@@ -184,3 +184,71 @@ func TestSkipMarkPassesMarkedNode(t *testing.T) {
 		t.Errorf("y.Prev() skipping marks = %p, want x %p", prev, x)
 	}
 }
+
+// Nodes a and y lie in this order between head and tail. Deleting a stops
+// after reading the links of a; n is then inserted between a and y. When the
+// delete resumes, n must stay linked between head and y.
+func TestMarkForDeleteKeepsInsertAfterNode(t *testing.T) {
+	entries := make([]typedEntry, 5)
+	head, tail := &entries[0].ListHead, &entries[4].ListHead
+	elist.InitAsEmpty(head, tail)
+	a, y, n := &entries[1].ListHead, &entries[2].ListHead, &entries[3].ListHead
+	for _, x := range []*elist.ListHead{a, y} {
+		if _, err := tail.InsertBefore(x); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	s := newStepper(t)
+	stop := s.stopAt("del.begin", a)
+	done, errA := goDo(func() error { return a.MarkForDelete() })
+	stop.waitReached(t)
+	if _, err := y.InsertBefore(n); err != nil {
+		t.Fatalf("insert n: %v", err)
+	}
+	stop.Release()
+	waitClosed(t, done, "delete a")
+	if *errA != nil {
+		t.Fatalf("delete a: %v", *errA)
+	}
+
+	names := map[*elist.ListHead]string{head: "head", a: "a", y: "y", n: "n", tail: "tail"}
+	assertLinked(t, names, head, tail, "n", "y")
+}
+
+// Nodes p, a and y lie in this order between head and tail. Inserting n
+// before a stops before its first CAS, and deleting a stops after marking
+// a.next. The insert then links n between p and a, and the delete finishes.
+// n must stay linked between p and y.
+func TestMarkForDeleteKeepsInsertBeforeNode(t *testing.T) {
+	entries := make([]typedEntry, 6)
+	head, tail := &entries[0].ListHead, &entries[5].ListHead
+	elist.InitAsEmpty(head, tail)
+	p, a, y, n := &entries[1].ListHead, &entries[2].ListHead, &entries[3].ListHead, &entries[4].ListHead
+	for _, x := range []*elist.ListHead{p, a, y} {
+		if _, err := tail.InsertBefore(x); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	s := newStepper(t)
+	ins := s.stopAt("add.cas1", n)
+	doneI, errI := goDo(func() error { _, err := a.InsertBefore(n); return err })
+	ins.waitReached(t)
+	del := s.stopAt("del.nextMarked", a)
+	doneD, errD := goDo(func() error { return a.MarkForDelete() })
+	del.waitReached(t)
+	ins.Release()
+	waitClosed(t, doneI, "insert n")
+	if *errI != nil {
+		t.Fatalf("insert n: %v", *errI)
+	}
+	del.Release()
+	waitClosed(t, doneD, "delete a")
+	if *errD != nil {
+		t.Fatalf("delete a: %v", *errD)
+	}
+
+	names := map[*elist.ListHead]string{head: "head", p: "p", a: "a", y: "y", n: "n", tail: "tail"}
+	assertLinked(t, names, head, tail, "p", "n", "y")
+}

@@ -41,12 +41,18 @@ func Cas(target *uintptr, old, new uintptr) bool {
 		new)
 }
 
+// MarkListHead sets the mark bit of the link at target only while the link
+// still holds old. It also succeeds when the link already holds old with the
+// mark bit, so that a retried delete can mark the same link again.
 func MarkListHead(target *uintptr, old uintptr) bool {
 
 	//mask := uintptr(^uint(0)) ^ 1
-	return atomic.CompareAndSwapUintptr(target,
-		*target,
-		uintptr(old)|1)
+	if atomic.CompareAndSwapUintptr(target,
+		old,
+		uintptr(old)|1) {
+		return true
+	}
+	return atomic.LoadUintptr(target) == uintptr(old)|1
 
 }
 
