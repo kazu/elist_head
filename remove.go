@@ -220,32 +220,30 @@ func (head *ListHead) MarkForDelete(opts ...list_head.TravOpt) (err error) {
 	return err
 }
 
+// PrevNoM returns the nearest node before head that is not marked, passing
+// over the marked nodes between them.
+//
 //go:nocheckptr
 func PrevNoM(head *ListHead) *ListHead {
 
-	prev := atomic.LoadUintptr(&head.prev)
-	mask := uintptr(^uint(0)) ^ 1
-	if uintptr(prev)&1 == 0 {
-		return head.directPrev()
+	prev := head.directPrev()
+	if prev == head || !prev.IsMarked() {
+		return prev
 	}
-
-	pHead := (*ListHead)(unsafe.Add(head.ptr(), int(prev&mask)))
-
-	return PrevNoM(pHead)
+	return PrevNoM(prev)
 
 }
 
+// NextNoM returns the nearest node after head that is not marked, passing
+// over the marked nodes between them.
+//
 //go:nocheckptr
 func NextNoM(head *ListHead) *ListHead {
-	next := atomic.LoadUintptr(&head.next)
-	mask := uintptr(^uint(0)) ^ 1
-	if uintptr(next)&1 == 0 {
-		return head.directNext()
+	next := head.directNext()
+	if next == head || !next.IsMarked() {
+		return next
 	}
-
-	nHead := (*ListHead)(unsafe.Add(head.ptr(), int(next&mask)))
-
-	return NextNoM(nHead)
+	return NextNoM(next)
 }
 
 func (head *ListHead) canPurge() bool {
