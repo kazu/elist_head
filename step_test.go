@@ -12,30 +12,73 @@ import (
 	list_head "github.com/kazu/loncha/lista_encabezado"
 )
 
-// stopAt stops the first goroutine that reaches point with node as its first
-// argument. reached is closed when it stops; release lets it go on.
-func stopAt(t *testing.T, point string, node *elist.ListHead) (reached <-chan struct{}, release func()) {
+// stepper stops goroutines at the step points of elist_head, so that a test
+// replays a concurrent interleaving one step at a time.
+type stepper struct {
+	mu    sync.Mutex
+	stops []*stepStop
+}
+
+type stepStop struct {
+	point   string
+	node    *elist.ListHead
+	used    bool
+	reached chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func newStepper(t *testing.T) *stepper {
 	t.Helper()
-	r, rel := make(chan struct{}), make(chan struct{})
-	var stopOnce, releaseOnce sync.Once
-	elist.SetStepHook(func(p string, a, b, c *elist.ListHead) {
-		if p != point || a != node {
-			return
-		}
-		stop := false
-		stopOnce.Do(func() { stop = true })
-		if !stop {
-			return
-		}
-		close(r)
-		<-rel
-	})
-	release = func() { releaseOnce.Do(func() { close(rel) }) }
+	s := &stepper{}
+	elist.SetStepHook(s.at)
 	t.Cleanup(func() {
 		elist.SetStepHook(nil)
-		release()
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		for _, st := range s.stops {
+			st.Release()
+		}
 	})
-	return r, release
+	return s
+}
+
+// stopAt stops the first goroutine that reaches point with node as its first
+// argument, until Release is called.
+func (s *stepper) stopAt(point string, node *elist.ListHead) *stepStop {
+	st := &stepStop{point: point, node: node, reached: make(chan struct{}), release: make(chan struct{})}
+	s.mu.Lock()
+	s.stops = append(s.stops, st)
+	s.mu.Unlock()
+	return st
+}
+
+func (s *stepper) at(point string, a, b, c *elist.ListHead) {
+	s.mu.Lock()
+	var st *stepStop
+	for _, x := range s.stops {
+		if !x.used && x.point == point && x.node == a {
+			x.used = true
+			st = x
+			break
+		}
+	}
+	s.mu.Unlock()
+	if st == nil {
+		return
+	}
+	close(st.reached)
+	<-st.release
+}
+
+func (st *stepStop) Release() {
+	st.once.Do(func() { close(st.release) })
+}
+
+// waitReached fails the test unless a goroutine stops at st.
+func (st *stepStop) waitReached(t *testing.T) {
+	t.Helper()
+	waitClosed(t, st.reached, st.point)
 }
 
 func waitClosed(t *testing.T, c <-chan struct{}, what string) {
@@ -45,6 +88,18 @@ func waitClosed(t *testing.T, c <-chan struct{}, what string) {
 	case <-time.After(10 * time.Second):
 		t.Fatalf("%s did not happen", what)
 	}
+}
+
+// goDo runs fn in a new goroutine and returns a channel closed when fn
+// returns, and a pointer to the error fn returned.
+func goDo(fn func() error) (<-chan struct{}, *error) {
+	done := make(chan struct{})
+	var err error
+	go func() {
+		defer close(done)
+		err = fn()
+	}()
+	return done, &err
 }
 
 // assertLinked checks that the list from head to tail holds exactly the nodes
@@ -81,21 +136,17 @@ func TestMarkForDeleteAdjacentKeepsNeighbors(t *testing.T) {
 		}
 	}
 
-	reached, release := stopAt(t, "del.marked", a)
-	done := make(chan struct{})
-	var errA error
-	go func() {
-		defer close(done)
-		errA = a.MarkForDelete()
-	}()
-	waitClosed(t, reached, "a marking its links")
+	s := newStepper(t)
+	stop := s.stopAt("del.marked", a)
+	done, errA := goDo(func() error { return a.MarkForDelete() })
+	stop.waitReached(t)
 	if err := b.MarkForDelete(); err != nil {
 		t.Fatalf("delete b: %v", err)
 	}
-	release()
+	stop.Release()
 	waitClosed(t, done, "delete a")
-	if errA != nil {
-		t.Fatalf("delete a: %v", errA)
+	if *errA != nil {
+		t.Fatalf("delete a: %v", *errA)
 	}
 
 	names := map[*elist.ListHead]string{head: "head", x: "x", a: "a", b: "b", y: "y", tail: "tail"}
@@ -116,17 +167,14 @@ func TestSkipMarkPassesMarkedNode(t *testing.T) {
 		}
 	}
 
-	reached, release := stopAt(t, "del.marked", a)
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		a.MarkForDelete()
-	}()
-	waitClosed(t, reached, "a marking its links")
+	s := newStepper(t)
+	stop := s.stopAt("del.marked", a)
+	done, _ := goDo(func() error { return a.MarkForDelete() })
+	stop.waitReached(t)
 	prevs := elist.SharedTrav(list_head.Trav(list_head.TravSkipMark))
 	next, prev := x.Next(), y.Prev()
 	elist.SharedTrav(prevs...)
-	release()
+	stop.Release()
 	waitClosed(t, done, "delete a")
 
 	if next != y {
