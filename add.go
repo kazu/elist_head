@@ -255,10 +255,10 @@ ROLLBACK:
 
 func (head *ListHead) IsMarked() bool {
 
-	if uintptr(head.prev)&1 > 0 {
+	if atomic.LoadUintptr(&head.prev)&1 > 0 {
 		return true
 	}
-	if uintptr(head.next)&1 > 0 {
+	if atomic.LoadUintptr(&head.next)&1 > 0 {
 		return true
 	}
 	return false
