@@ -266,13 +266,13 @@ func (head *ListHead) IsMarked() bool {
 
 func (head *ListHead) IsSafety() (bool, error) {
 
-	prev := head.Prev() // should skip mark
-	next := head.Next() // should skip mark
+	prev := PrevNoM(head) // should skip mark
+	next := NextNoM(head) // should skip mark
 
-	if prev.IsMarked() {
+	if prev.directNext().IsMarked() {
 		return false, nil
 	}
-	if next.IsMarked() {
+	if next.directPrev().IsMarked() {
 		return false, nil
 	}
 	if prev == head {
