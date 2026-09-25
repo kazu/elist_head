@@ -45,6 +45,7 @@ func (head *ListHead) InsertBefore(new *ListHead, opts ...list_head.TravOpt) (*L
 	if head.isMarkedForDeleteWithoutError() {
 		return head, ErrMarked
 	}
+	stepAt("insert.begin", new, nil, head)
 
 	nNode := toNode(new)
 	head.insertBefore(nNode, opts...)
@@ -197,12 +198,15 @@ func listAddWitCas(new, prev, next *ListHead, fn func(*ListHead) *sync.RWMutex) 
 	a := prev.diffPtrToHead(next)
 	b := prev.diffPtrToHead(new)
 	_, _ = a, b
+	stepAt("add.cas1", new, prev, next)
 	if !Cas(&prev.next, uintptr(prev.diffPtrToHead(next)), uintptr(prev.diffPtrToHead(new))) {
 		goto ROLLBACK
 	}
+	stepAt("add.cas2", new, prev, next)
 	if !Cas(&next.prev, uintptr(next.diffPtrToHead(prev)), uintptr(next.diffPtrToHead(new))) {
 		//if !Cas(&next.prev, prev, new) {
 
+		stepAt("add.rollback", new, prev, next)
 		if !Cas(&prev.next, uintptr(prev.diffPtrToHead(new)), uintptr(prev.diffPtrToHead(next))) {
 			//if !Cas(&prev.next, new, next) {
 			_ = "fail rollback?"

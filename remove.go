@@ -120,6 +120,7 @@ func (head *ListHead) MarkForDelete(opts ...list_head.TravOpt) (err error) {
 			//AddRecoverState("remove: retry marked prev")
 			return false, ErrDeketeStep1
 		}
+		stepAt("del.marked", head, prev1, next1)
 		if !prev1.Empty() {
 			// mode.Mu(prev1).Lock()
 			// defer mode.Mu(prev1).Unlock()
@@ -179,6 +180,7 @@ func (head *ListHead) MarkForDelete(opts ...list_head.TravOpt) (err error) {
 			t = Cas(np, uintptr(nexts[i].diffPtrToHead(head)), uintptr(nexts[i].diffPtrToHead(prev)))
 			//t = Cas(np, l, prev)
 		}
+		stepAt("del.check", head, prev1, next1)
 		errs := []error{}
 
 		for i, toL := range append(prevNexts, nextPrevs...) {
