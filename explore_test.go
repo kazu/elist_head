@@ -344,3 +344,21 @@ func TestExploreInsertTwiceBeforeNode(t *testing.T) {
 		}
 	})
 }
+
+// Two adjacent nodes a and b are deleted at the same time.
+func TestExploreDeleteAdjacentNodes(t *testing.T) {
+	explore(t, func() ([]op, func([]error) error) {
+		head, tail, nodes, byNode := newNamedList(t, "x", "a", "b", "y")
+		x, a, b, y := nodes["x"], nodes["a"], nodes["b"], nodes["y"]
+		linkAll(t, tail, x, a, b, y)
+		return []op{deleteOp("delete a", a), deleteOp("delete b", b)}, func(errs []error) error {
+			if err := wantLinked(byNode, head, tail, "x", "y"); err != nil {
+				return err
+			}
+			if err := checkDeleted(byNode, a, errs[0]); err != nil {
+				return err
+			}
+			return checkDeleted(byNode, b, errs[1])
+		}
+	})
+}

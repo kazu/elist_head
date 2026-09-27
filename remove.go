@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"sync/atomic"
-	"unsafe"
 
 	list_head "github.com/kazu/loncha/lista_encabezado"
 )
@@ -141,77 +140,25 @@ func (head *ListHead) MarkForDelete(opts ...list_head.TravOpt) (err error) {
 		}
 
 		_, _ = prev2, next2
-		prevs := [2]*ListHead{prev1, prev2}
-		nexts := [2]*ListHead{next1, next2}
 
-		prevNexts := []*uintptr{&prev1.next, &prev2.next}
-		nextPrevs := []*uintptr{&next1.prev, &next2.prev}
-		//		nexts := []**ListHead{&next1.prev, &next2.prev}
-
-		// prevs := []**ListHead{&prev1.next, &prev2.next}
-		// nexts := []**ListHead{&next1.prev, &next2.prev}
-
-		t := false
-		_ = t
-		for i, pn := range prevNexts {
-			// prev1 := (*ListHead)(unsafe.Add(l.ptr(), int(uintptr(l.prev)&mask)))
-			//  *pn != l
-			if uintptr(unsafe.Pointer(prevs[i]))+atomic.LoadUintptr(pn) != uintptr(unsafe.Pointer(head)) {
-				continue
-			}
-
-			next := next1
-			if next.IsMarked() {
-				next = next2
-			}
-			stepAt("del.relink", head, prevs[i], next)
-			t = Cas(prevNexts[i], uintptr(prevs[i].diffPtrToHead(head)), uintptr(prevs[i].diffPtrToHead(next)))
-			//t = Cas(prevNexts[i], l, next)
+		// relink the links to head from the nearest nodes that are not
+		// marked, passing the marked nodes between them and head
+		if x, v := linkingPrev(head); x != nil && v&1 == 0 {
+			next := NextNoM(head)
+			stepAt("del.relink", head, x, next)
+			Cas(&x.next, v, uintptr(x.diffPtrToHead(next)))
 		}
-
-		for i, np := range nextPrevs {
-			//_ = i
-			if uintptr(unsafe.Pointer(nexts[i]))+atomic.LoadUintptr(np) != uintptr(unsafe.Pointer(head)) {
-				continue
-			}
-
-			prev := prev1
-			if prev.IsMarked() {
-				prev = prev2
-			}
-
-			t = Cas(np, uintptr(nexts[i].diffPtrToHead(head)), uintptr(nexts[i].diffPtrToHead(prev)))
-			//t = Cas(np, l, prev)
+		if z, v := linkingNext(head); z != nil && v&1 == 0 {
+			Cas(&z.prev, v, uintptr(z.diffPtrToHead(PrevNoM(head))))
 		}
 		stepAt("del.check", head, prev1, next1)
-		errs := []error{}
-
-		for i, toL := range append(prevNexts, nextPrevs...) {
-			_ = i
-			var base *ListHead
-			if i < 2 {
-				base = prevs[i%2]
-			} else {
-				base = nexts[i%2]
-			}
-			a := uintptr(unsafe.Pointer(base)) + atomic.LoadUintptr(toL)
-			b := uintptr(unsafe.Pointer(head))
-			_, _ = a, b
-
-			if uintptr(unsafe.Pointer(base))+atomic.LoadUintptr(toL) == uintptr(unsafe.Pointer(head)) {
-				return false, ErrDeketeStep2
-
-			} else {
-				errs = append(errs, nil)
-			}
-			// if l == *toL {
-			// 	//AddRecoverState("remove: found node to me")
-			// 	return false, ErrDeketeStep2
-			// }
+		if x, _ := linkingPrev(head); x != nil {
+			return false, ErrDeketeStep2
+		}
+		if z, _ := linkingNext(head); z != nil {
+			return false, ErrDeketeStep2
 		}
 
-		prev2 = PrevNoM(head)
-		next2 = NextNoM(head)
 		return true, nil
 	}
 	for retry := 0; ; retry++ {
@@ -296,4 +243,42 @@ func CasIncPointer(t *uintptr, same uintptr, moved int) bool {
 
 	return atomic.CompareAndSwapUintptr(t, same, uintptr(int(same)+moved))
 
+}
+
+// linkingPrev returns the nearest node before head that is not marked and
+// the value of its next, when that next leads to head passing only marked
+// nodes. It returns nil when no such link is left.
+//
+//go:nocheckptr
+func linkingPrev(head *ListHead) (*ListHead, uintptr) {
+	x := PrevNoM(head)
+	v := atomic.LoadUintptr(&x.next)
+	for cur := x.directNext(); cur != x; cur = cur.directNext() {
+		if cur == head {
+			return x, v
+		}
+		if !cur.IsMarked() || cur.directNext() == cur {
+			break
+		}
+	}
+	return nil, 0
+}
+
+// linkingNext returns the nearest node after head that is not marked and
+// the value of its prev, when that prev leads to head passing only marked
+// nodes. It returns nil when no such link is left.
+//
+//go:nocheckptr
+func linkingNext(head *ListHead) (*ListHead, uintptr) {
+	z := NextNoM(head)
+	v := atomic.LoadUintptr(&z.prev)
+	for cur := z.directPrev(); cur != z; cur = cur.directPrev() {
+		if cur == head {
+			return z, v
+		}
+		if !cur.IsMarked() || cur.directPrev() == cur {
+			break
+		}
+	}
+	return nil, 0
 }
