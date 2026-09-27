@@ -48,8 +48,8 @@ func (head *ListHead) InsertBefore(new *ListHead, opts ...list_head.TravOpt) (*L
 	stepAt("insert.begin", new, nil, head)
 
 	nNode := toNode(new)
-	head.insertBefore(nNode, opts...)
-	return head, nil
+	err := head.insertBefore(nNode, opts...)
+	return head, err
 
 
 }
@@ -81,7 +81,7 @@ func (head *ListHead) TryInsertBefore(new *ListHead, accept func(prev *ListHead)
 	return listAddWitCas(toNode(new), prev, head, nil)
 }
 
-func (head *ListHead) insertBefore(new *ListHead, opts ...list_head.TravOpt) {
+func (head *ListHead) insertBefore(new *ListHead, opts ...list_head.TravOpt) error {
 
 	var err error
 	mode := list_head.NewTraverse()
@@ -97,12 +97,18 @@ func (head *ListHead) insertBefore(new *ListHead, opts ...list_head.TravOpt) {
 	next := head
 	prev := head.directPrev()
 	err = list_head.Retry(100, func(retry int) (finish bool, err error) {
+		if prev == head {
+			return true, ErrNotAppend
+		}
 		err = listAddWitCas(new,
 			prev,
 			next, nil)
 		//next, mode.Mu)
 		if err == nil {
 			return true, err
+		}
+		if head.isMarkedForDeleteWithoutError() {
+			return true, ErrMarked
 		}
 		prev = head.directPrev()
 		//AddRecoverState("cas retry")
@@ -111,7 +117,7 @@ func (head *ListHead) insertBefore(new *ListHead, opts ...list_head.TravOpt) {
 	if err != nil {
 		mode.SetError(err)
 	}
-	return
+	return err
 }
 
 // ReplaceNext ... replace next element to new multiple list
