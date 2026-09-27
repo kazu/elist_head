@@ -11,13 +11,14 @@ import (
 // Nodes a, s0, b and s1 lie in this order between head and tail, and s0 and
 // s1 are a slice that is copied to d0 and d1. After the copy and before
 // RepaireSliceAfterCopy, N is inserted before s1, as an inserter that does
-// not wait for the copy does. The repair moves a.next and b.prev to d0, then
-// moves N.next to d1, finds that d1.prev still points to b, and returns an
-// error without putting the moved links back. The list is left linked
-// forward through d0 and d1, whose next still holds the offset from s1 to
-// tail, and backward through s1 and s0. Whether the repair fails or not, the
-// list must stay linked the same way in both directions, through either the
-// source or the copy.
+// not wait for the copy does. Before the fix, the repair moved a.next and
+// b.prev to d0, then moved N.next to d1, found that d1.prev still pointed to
+// b, and returned an error without putting the moved links back. The list was
+// left linked forward through d0 and d1, whose next still held the offset from
+// s1 to tail, and backward through s1 and s0. The repair now writes the links
+// of the copy from the links of the source when it starts. The list must stay
+// linked the same way in both directions, through either the source or the
+// copy.
 func TestRepairErrorLeavesListLinked(t *testing.T) {
 	all := repairEntries()
 	head, a, b, n, tail := &all[0].ListHead, &all[1].ListHead, &all[2].ListHead, &all[3].ListHead, &all[4].ListHead
