@@ -156,7 +156,7 @@ func (head *ListHead) MarkForDelete(opts ...list_head.TravOpt) (err error) {
 		for i, pn := range prevNexts {
 			// prev1 := (*ListHead)(unsafe.Add(l.ptr(), int(uintptr(l.prev)&mask)))
 			//  *pn != l
-			if uintptr(unsafe.Pointer(prevs[i]))+uintptr(*pn) != uintptr(unsafe.Pointer(head)) {
+			if uintptr(unsafe.Pointer(prevs[i]))+atomic.LoadUintptr(pn) != uintptr(unsafe.Pointer(head)) {
 				continue
 			}
 
@@ -171,7 +171,7 @@ func (head *ListHead) MarkForDelete(opts ...list_head.TravOpt) (err error) {
 
 		for i, np := range nextPrevs {
 			//_ = i
-			if uintptr(unsafe.Pointer(nexts[i]))+uintptr(*np) != uintptr(unsafe.Pointer(head)) {
+			if uintptr(unsafe.Pointer(nexts[i]))+atomic.LoadUintptr(np) != uintptr(unsafe.Pointer(head)) {
 				continue
 			}
 
@@ -194,11 +194,11 @@ func (head *ListHead) MarkForDelete(opts ...list_head.TravOpt) (err error) {
 			} else {
 				base = nexts[i%2]
 			}
-			a := uintptr(unsafe.Pointer(base)) + uintptr(*toL)
+			a := uintptr(unsafe.Pointer(base)) + atomic.LoadUintptr(toL)
 			b := uintptr(unsafe.Pointer(head))
 			_, _ = a, b
 
-			if uintptr(unsafe.Pointer(base))+uintptr(*toL) == uintptr(unsafe.Pointer(head)) {
+			if uintptr(unsafe.Pointer(base))+atomic.LoadUintptr(toL) == uintptr(unsafe.Pointer(head)) {
 				return false, ErrDeketeStep2
 
 			} else {
