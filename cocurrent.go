@@ -8,6 +8,7 @@ package elist_head
 
 import (
 	"errors"
+	"runtime"
 	"sync/atomic"
 	"unsafe"
 
@@ -137,7 +138,7 @@ func RepaireSliceAfterCopy(sHead, sTail unsafe.Pointer, dHead unsafe.Pointer, si
 		l.new = IncPointer(l.old, moved)
 		if !Cas(l.link, l.old, l.new) {
 			for j := i - 1; j >= 0; j-- {
-				Cas(links[j].link, links[j].new, links[j].old)
+				putBackToSource(links[j].src, links[j].t, moved, links[j].prevSide)
 			}
 			return errors.New("duplicated rewrite outside ListHead")
 		}
@@ -146,4 +147,46 @@ func RepaireSliceAfterCopy(sHead, sTail unsafe.Pointer, dHead unsafe.Pointer, si
 		}
 	}
 	return nil
+}
+
+// putBackToSource leads the list back from the copy of src to src, on the
+// side of prev when prevSide is true and of next otherwise. The node outside
+// the slice that leads to the copy may differ from the one the repair moved,
+// since other writers insert and delete there meanwhile: it waits until the
+// node that the copy links to on that side links back to the copy, and moves
+// that link.
+//
+//go:nocheckptr
+func putBackToSource(src, outer *ListHead, moved int, prevSide bool) {
+	dst := (*ListHead)(unsafe.Add(unsafe.Pointer(src), moved))
+	// src.next is written only here and by an insert after src, which then
+	// waits for the prev link of the node after src to be src
+	last := uintptr(unsafe.Pointer(outer)) - uintptr(unsafe.Pointer(src))
+	for {
+		if prevSide {
+			p := (*ListHead)(unsafe.Add(unsafe.Pointer(dst), int(atomic.LoadUintptr(&dst.prev)&^1)))
+			atomic.StoreUintptr(&src.prev, uintptr(unsafe.Pointer(p))-uintptr(unsafe.Pointer(src)))
+			if Cas(&p.next, uintptr(unsafe.Pointer(dst))-uintptr(unsafe.Pointer(p)), uintptr(unsafe.Pointer(src))-uintptr(unsafe.Pointer(p))) {
+				stepAt("repair.putBack", src, p, dst)
+				return
+			}
+		} else {
+			n := (*ListHead)(unsafe.Add(unsafe.Pointer(dst), int(atomic.LoadUintptr(&dst.next)&^1)))
+			// n is outer unless nodes were inserted after the copy or n
+			// was deleted: then lead src to n as the first CAS of an insert
+			// of n does, and wait while an insert after src holds src.next
+			if want := uintptr(unsafe.Pointer(n)) - uintptr(unsafe.Pointer(src)); want != last {
+				if !Cas(&src.next, last, want) {
+					runtime.Gosched()
+					continue
+				}
+				last = want
+			}
+			if Cas(&n.prev, uintptr(unsafe.Pointer(dst))-uintptr(unsafe.Pointer(n)), uintptr(unsafe.Pointer(src))-uintptr(unsafe.Pointer(n))) {
+				stepAt("repair.putBack", src, n, dst)
+				return
+			}
+		}
+		runtime.Gosched()
+	}
 }
