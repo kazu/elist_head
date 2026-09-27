@@ -126,20 +126,6 @@ func (head *ListHead) MarkForDelete(opts ...list_head.TravOpt) (err error) {
 			// mode.Mu(prev1).Lock()
 			// defer mode.Mu(prev1).Unlock()
 		}
-		prev2 := PrevNoM(head)
-		next2 := NextNoM(head)
-		if mode.Mu != nil {
-			if !prev2.Empty() {
-				// mode.Mu(prev2).Lock()
-				// defer mode.Mu(prev2).Unlock()
-			}
-			if !next2.Empty() {
-				// mode.Mu(next2).Lock()
-				// defer mode.Mu(next2).Unlock()
-			}
-		}
-
-		_, _ = prev2, next2
 
 		// relink the links to head from the nearest nodes that are not
 		// marked, passing the marked nodes between them and head. An insert
@@ -171,10 +157,6 @@ func (head *ListHead) MarkForDelete(opts ...list_head.TravOpt) (err error) {
 			err = e
 			break
 		}
-	}
-
-	if err != nil {
-		mode.SetError(err)
 	}
 
 	return err
