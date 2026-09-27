@@ -36,7 +36,8 @@ func (head *ListHead) InsertBefore(new *ListHead, opts ...list_head.TravOpt) (*L
 
 	if new.IsMarked() {
 		if ok, _ := new.IsSafety(); ok {
-			new.prev, new.next = uintptr(0), uintptr(0)
+			atomic.StoreUintptr(&new.prev, 0)
+			atomic.StoreUintptr(&new.next, 0)
 		} else {
 			return head, ErrNoSafetyOnAdd
 		}
@@ -63,7 +64,8 @@ func (head *ListHead) TryInsertBefore(new *ListHead, accept func(prev *ListHead)
 
 	if new.IsMarked() {
 		if ok, _ := new.IsSafety(); ok {
-			new.prev, new.next = uintptr(0), uintptr(0)
+			atomic.StoreUintptr(&new.prev, 0)
+			atomic.StoreUintptr(&new.next, 0)
 		} else {
 			return ErrNoSafetyOnAdd
 		}

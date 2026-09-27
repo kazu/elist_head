@@ -225,7 +225,8 @@ func InitAfterSafety(retry int) func(*ListHead) error {
 			if ok, _ := head.IsSafety(); !ok {
 				return false, ErrNoSafetyOnAdd
 			}
-			head.prev, head.next = uintptr(0), uintptr(0)
+			atomic.StoreUintptr(&head.prev, 0)
+			atomic.StoreUintptr(&head.next, 0)
 			return true, nil
 		})
 	}
