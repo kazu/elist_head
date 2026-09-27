@@ -125,6 +125,7 @@ func RepaireSliceAfterCopy(sHead, sTail unsafe.Pointer, dHead unsafe.Pointer, si
 				if !CasIncPointer(&t.next, uintptr(cur)-uintptr(unsafe.Pointer(t)), moved) {
 					return errors.New("duplicated rewrite outside ListHead")
 				}
+				stepAt("repair.prevLinked", cHead, t, dHead)
 
 				dHead.prev = IncPointer(dHead.prev, -moved)
 

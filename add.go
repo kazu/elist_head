@@ -132,8 +132,10 @@ func (head *ListHead) ReplaceNext(nextHead *ListHead, nextTail *ListHead, next *
 	// prev := head.directPrev()
 
 	err = list_head.Retry(100, func(retry int) (finish bool, err error) {
+		stepAt("replace.begin", head, nextHead, next)
 		oldNext := head.next
 		oldNewNextPrev := next.prev
+		stepAt("replace.read", head, nextHead, next)
 
 		rollback := func(head, next *ListHead) {
 			atomic.StoreUintptr(&head.next, oldNext)
@@ -146,6 +148,7 @@ func (head *ListHead) ReplaceNext(nextHead *ListHead, nextTail *ListHead, next *
 		if !Cas(&head.next, oldNext, uintptr(head.diffPtrToHead(nextHead))) {
 			goto ROLLBACK
 		}
+		stepAt("replace.cas2", head, nextHead, next)
 
 		if !Cas(&next.prev, oldNewNextPrev, uintptr(next.diffPtrToHead(nextTail))) {
 			goto ROLLBACK
@@ -155,6 +158,7 @@ func (head *ListHead) ReplaceNext(nextHead *ListHead, nextTail *ListHead, next *
 
 	ROLLBACK:
 		rollback(head, next)
+		stepAt("replace.rollback", head, nextHead, next)
 		return false, NewError(ErrTCasConflictOnAdd, errors.New("cas conflict in Replace"))
 	})
 	if err != nil {

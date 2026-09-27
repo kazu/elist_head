@@ -18,6 +18,16 @@ import "sync/atomic"
 //   - "del.marked" (node, prev, next): both links of node are marked.
 //   - "del.relink" (node, prev, next): prev.next was node; before it is changed to next.
 //   - "del.check" (node, prev, next): the links to node are changed; before they are checked.
+//   - "repair.prevLinked" (old, prev, copy): RepaireSliceAfterCopy changed prev.next from
+//     old to its copy; before the links of the copy are moved.
+//   - "replace.begin" (head, nextHead, next): ReplaceNext starts a try; before
+//     head.next and next.prev are read.
+//   - "replace.read" (head, nextHead, next): head.next and next.prev are read;
+//     before any of them is changed.
+//   - "replace.cas2" (head, nextHead, next): head.next is nextHead; before
+//     next.prev is changed.
+//   - "replace.rollback" (head, nextHead, next): a CAS of the try failed and
+//     head.next and next.prev are put back; before the next try.
 type StepHook func(point string, a, b, c *ListHead)
 
 var stepHook atomic.Pointer[StepHook]
@@ -29,6 +39,13 @@ func SetStepHook(fn StepHook) {
 		return
 	}
 	stepHook.Store(&fn)
+}
+
+// LinkMarks reports whether the prev link and the next link of n carry the
+// mark of a delete, so that a test sees a mark that a later store or CAS
+// took away while IsMarked still sees the other one.
+func LinkMarks(n *ListHead) (prev, next bool) {
+	return atomic.LoadUintptr(&n.prev)&1 != 0, atomic.LoadUintptr(&n.next)&1 != 0
 }
 
 func stepAt(point string, a, b, c *ListHead) {
