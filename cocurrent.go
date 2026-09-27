@@ -8,7 +8,6 @@ package elist_head
 
 import (
 	"errors"
-	"fmt"
 	"sync/atomic"
 	"unsafe"
 
@@ -98,61 +97,53 @@ func RepaireSliceAfterCopy(sHead, sTail unsafe.Pointer, dHead unsafe.Pointer, si
 
 	moved := int(uintptr(dHead)) - int(uintptr(sHead))
 
-	cntChanged := 0
+	// outer reports whether the link v of the node at ptr leaves the slice
+	outer := func(ptr, v uintptr) bool {
+		return ptr+(v&^1) < start || ptr+(v&^1) > last
+	}
+	// a link of a node outside the slice that is moved to the copy
+	type outerLink struct {
+		link     *uintptr
+		old, new uintptr
+		prevSide bool
+		src, t   *ListHead
+	}
+	var links []outerLink
+
+	// write the links of the copy from the links the source has now, before
+	// any node outside the slice leads to the copy
 	for cur := unsafe.Add(sHead, offset); uintptr(cur) < uintptr(last); cur = unsafe.Add(cur, size) {
-
-		// if cntChanged >= 2 {
-		// 	break
-		// }
-
-		cHead := (*ListHead)(cur)
-		ptrs := cHead.noInners(start, last)
-
-		if len(ptrs) == 0 {
-			continue
+		src := (*ListHead)(cur)
+		dst := (*ListHead)(unsafe.Add(cur, moved))
+		prev, next := atomic.LoadUintptr(&src.prev), atomic.LoadUintptr(&src.next)
+		if outer(uintptr(cur), prev) {
+			t := (*ListHead)(unsafe.Add(cur, int(prev&^1)))
+			links = append(links, outerLink{link: &t.next, old: uintptr(cur) - uintptr(unsafe.Pointer(t)), prevSide: true, src: src, t: t})
+			prev = IncPointer(prev, -moved)
 		}
-		dHead := (*ListHead)(unsafe.Add(cur, moved))
+		if outer(uintptr(cur), next) {
+			t := (*ListHead)(unsafe.Add(cur, int(next&^1)))
+			links = append(links, outerLink{link: &t.prev, old: uintptr(cur) - uintptr(unsafe.Pointer(t)), src: src, t: t})
+			next = IncPointer(next, -moved)
+		}
+		atomic.StoreUintptr(&dst.prev, prev)
+		atomic.StoreUintptr(&dst.next, next)
+	}
 
-		// if cntChanged >= 3 {
-		// 	fmt.Printf("invalid count")
-		// }
-
-		for _, iPtr := range ptrs {
-
-			if iPtr == cHead.prev {
-				t := cHead.directPrev()
-				//t.next = IncPointer(t.next, moved)
-				if !CasIncPointer(&t.next, uintptr(cur)-uintptr(unsafe.Pointer(t)), moved) {
-					return errors.New("duplicated rewrite outside ListHead")
-				}
-				stepAt("repair.prevLinked", cHead, t, dHead)
-
-				dHead.prev = IncPointer(dHead.prev, -moved)
-
-				tt := dHead.directPrev()
-				succ := tt == t && tt.directNext() != cHead
-				if !succ {
-					return fmt.Errorf("invalid ListHead.prev oldHead.direcvPrev()=%016p ?== newHead.directPrev()=%016p or newHead.directNext()=%016p ?== oldHead=%016p ",
-						t, tt, tt.directNext(), cHead)
-				}
-
-			} else if iPtr == cHead.next {
-				t := cHead.directNext()
-
-				//t.prev = IncPointer(t.prev, moved)
-				if !CasIncPointer(&t.prev, uintptr(cur)-uintptr(unsafe.Pointer(t)), moved) {
-					return errors.New("duplicated rewrite outside ListHead")
-				}
-				dHead.next = IncPointer(dHead.next, -moved)
-
-				tt := dHead.directNext()
-				succ := tt == t && tt.directPrev() != cHead
-				if !succ {
-					return errors.New("invalid ListHead.next")
-				}
+	// lead the nodes outside the slice to the copy, and put them back to the
+	// source when one of them no longer links to the source
+	for i := range links {
+		l := &links[i]
+		l.new = IncPointer(l.old, moved)
+		if !Cas(l.link, l.old, l.new) {
+			for j := i - 1; j >= 0; j-- {
+				Cas(links[j].link, links[j].new, links[j].old)
 			}
+			return errors.New("duplicated rewrite outside ListHead")
 		}
-		cntChanged++
+		if l.prevSide {
+			stepAt("repair.prevLinked", l.src, l.t, (*ListHead)(unsafe.Add(unsafe.Pointer(l.src), moved)))
+		}
 	}
 	return nil
 }
