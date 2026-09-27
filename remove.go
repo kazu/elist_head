@@ -83,7 +83,7 @@ func (head *ListHead) MarkForDelete(opts ...list_head.TravOpt) (err error) {
 	)
 	_, _ = ErrDeketeStep2, ErrDeketeStep3
 
-	err = list_head.Retry(100, func(retry int) (fin bool, err error) {
+	try := func(retry int) (fin bool, err error) {
 		prev1 := head.directPrev()
 		next1 := head.directNext()
 		stepAt("del.begin", head, prev1, next1)
@@ -213,7 +213,13 @@ func (head *ListHead) MarkForDelete(opts ...list_head.TravOpt) (err error) {
 		prev2 = PrevNoM(head)
 		next2 = NextNoM(head)
 		return true, nil
-	})
+	}
+	for retry := 0; ; retry++ {
+		if fin, e := try(retry); fin {
+			err = e
+			break
+		}
+	}
 
 	if err != nil {
 		mode.SetError(err)
