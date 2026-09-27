@@ -236,6 +236,11 @@ func listAddWitCas(new, prev, next *ListHead, fn func(*ListHead) *sync.RWMutex) 
 	b := prev.diffPtrToHead(new)
 	_, _ = a, b
 	stepAt("add.cas1", new, prev, next)
+	// an insert before next waits while next is half inserted: the node after
+	// next does not link back to next yet
+	if nn := next.directNext(); nn != next && nn.directPrev() != next {
+		goto ROLLBACK
+	}
 	if !Cas(&prev.next, uintptr(prev.diffPtrToHead(next)), uintptr(prev.diffPtrToHead(new))) {
 		goto ROLLBACK
 	}
@@ -244,9 +249,10 @@ func listAddWitCas(new, prev, next *ListHead, fn func(*ListHead) *sync.RWMutex) 
 		//if !Cas(&next.prev, prev, new) {
 
 		stepAt("add.rollback", new, prev, next)
-		if !Cas(&prev.next, uintptr(prev.diffPtrToHead(new)), uintptr(prev.diffPtrToHead(next))) {
-			//if !Cas(&prev.next, new, next) {
-			_ = "fail rollback?"
+		// take new out as a delete of new does, so that a delete of next
+		// that passed over the link from prev to new sees it removed
+		if err := new.MarkForDelete(); err != nil {
+			return err
 		}
 
 		goto ROLLBACK
@@ -292,6 +298,9 @@ func (head *ListHead) IsSafety() (bool, error) {
 		return false, nil
 	}
 	if prev.directNext() == head || next.directPrev() == head {
+		return false, nil
+	}
+	if !head.unlinked() {
 		return false, nil
 	}
 	return true, nil

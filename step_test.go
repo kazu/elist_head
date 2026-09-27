@@ -329,3 +329,45 @@ func TestIsSafetyWhileNeighborsLinkTo(t *testing.T) {
 		t.Error("IsSafety() = false after a is deleted")
 	}
 }
+
+// Nodes p, a and y lie in this order between head and tail. Inserting n
+// before a stops after its first CAS: p.next is n and a.prev is still p.
+// Deleting a then marks a in another goroutine, and the insert resumes; its
+// second CAS fails on the mark of a.prev. When both end, the list must hold
+// p and y linked both ways, no node may link to a, and the insert must
+// report that it did not link n.
+func TestInsertBeforeNodeDeletedBetweenCASes(t *testing.T) {
+	entries := make([]typedEntry, 6)
+	head, tail := &entries[0].ListHead, &entries[5].ListHead
+	elist.InitAsEmpty(head, tail)
+	p, a, y, n := &entries[1].ListHead, &entries[2].ListHead, &entries[3].ListHead, &entries[4].ListHead
+	for _, x := range []*elist.ListHead{p, a, y} {
+		if _, err := tail.InsertBefore(x); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	s := newStepper(t)
+	ins := s.stopAt("add.cas2", n)
+	doneI, errI := goDo(func() error { _, err := a.InsertBefore(n); return err })
+	ins.waitReached(t)
+	marked := s.stopAt("del.marked", a)
+	doneD, errD := goDo(func() error { return a.MarkForDelete() })
+	marked.waitReached(t)
+	marked.Release()
+	ins.Release()
+	waitClosed(t, doneI, "insert n")
+	waitClosed(t, doneD, "delete a")
+	if *errD != nil {
+		t.Fatalf("delete a: %v", *errD)
+	}
+
+	names := map[*elist.ListHead]string{head: "head", p: "p", a: "a", y: "y", n: "n", tail: "tail"}
+	assertLinked(t, names, head, tail, "p", "y")
+	if safe, _ := a.IsSafety(); !safe {
+		t.Error("a is not safe to reuse after its delete")
+	}
+	if *errI == nil {
+		t.Error("InsertBefore(n) returned no error, but n is not linked")
+	}
+}

@@ -2,7 +2,7 @@ package elist_head
 
 import (
 	"errors"
-	"fmt"
+	"runtime"
 	"sync/atomic"
 
 	list_head "github.com/kazu/loncha/lista_encabezado"
@@ -104,9 +104,9 @@ func (head *ListHead) MarkForDelete(opts ...list_head.TravOpt) (err error) {
 		prev := prev1
 		next := next1
 
-		if retry > 50 {
-			fmt.Printf("retry > 50\n")
-
+		if retry > 0 {
+			// a neighbor is in the middle of an insert or a delete
+			runtime.Gosched()
 		}
 
 		if !MarkListHead(&head.next, uintptr(head.diffPtrToHead(next))) {
@@ -142,20 +142,25 @@ func (head *ListHead) MarkForDelete(opts ...list_head.TravOpt) (err error) {
 		_, _ = prev2, next2
 
 		// relink the links to head from the nearest nodes that are not
-		// marked, passing the marked nodes between them and head
+		// marked, passing the marked nodes between them and head. An insert
+		// that has made only its first CAS next to head is waited for: it
+		// either finishes or removes its node.
+		if halfInsertedBefore(head) {
+			return false, ErrDeketeStep2
+		}
 		if x, v := linkingPrev(head); x != nil && v&1 == 0 {
 			next := NextNoM(head)
 			stepAt("del.relink", head, x, next)
 			Cas(&x.next, v, uintptr(x.diffPtrToHead(next)))
 		}
-		if z, v := linkingNext(head); z != nil && v&1 == 0 {
-			Cas(&z.prev, v, uintptr(z.diffPtrToHead(PrevNoM(head))))
-		}
-		stepAt("del.check", head, prev1, next1)
-		if x, _ := linkingPrev(head); x != nil {
+		if halfInsertedAfter(head) {
 			return false, ErrDeketeStep2
 		}
-		if z, _ := linkingNext(head); z != nil {
+		if z, v := linkingNext(head); z != nil && v&1 == 0 {
+			Cas(&z.prev, v, uintptr(z.diffPtrToHead(linkedBefore(head, z))))
+		}
+		stepAt("del.check", head, prev1, next1)
+		if !head.unlinked() {
 			return false, ErrDeketeStep2
 		}
 
@@ -281,4 +286,66 @@ func linkingNext(head *ListHead) (*ListHead, uintptr) {
 		}
 	}
 	return nil, 0
+}
+
+// halfInsertedBefore reports whether a node that is not marked links to
+// head by its next while the node before it does not link to head: an
+// insert before head has made its first CAS and not its second.
+//
+//go:nocheckptr
+func halfInsertedBefore(head *ListHead) bool {
+	x := PrevNoM(head)
+	for cur := x.directNext(); cur != x && cur != head; cur = cur.directNext() {
+		if cur.directNext() == cur {
+			return false
+		}
+		if !cur.IsMarked() {
+			return cur.directNext() == head
+		}
+	}
+	return false
+}
+
+// halfInsertedAfter reports whether the nearest node after head that is not
+// marked is linked from head while the node after it still links back to
+// head: an insert after head has made its first CAS and not its second.
+//
+//go:nocheckptr
+func halfInsertedAfter(head *ListHead) bool {
+	z := NextNoM(head)
+	if z == head || z.directNext() == z {
+		return false
+	}
+	return z.directNext().directPrev() == head
+}
+
+// linkedBefore returns the node whose next is z, walking forward from the
+// nearest node before head that is not marked, or that node when the walk
+// does not reach z.
+//
+//go:nocheckptr
+func linkedBefore(head, z *ListHead) *ListHead {
+	x := PrevNoM(head)
+	for cur := x; cur.directNext() != cur; cur = cur.directNext() {
+		if cur.directNext() == z {
+			return cur
+		}
+		if cur.directNext() == x {
+			break
+		}
+	}
+	return x
+}
+
+// unlinked reports whether no link reaches head from the nearest nodes
+// before and after it that are not marked, and no insert next to head is
+// between its two CASes.
+func (head *ListHead) unlinked() bool {
+	if x, _ := linkingPrev(head); x != nil {
+		return false
+	}
+	if z, _ := linkingNext(head); z != nil {
+		return false
+	}
+	return !halfInsertedBefore(head) && !halfInsertedAfter(head)
 }
