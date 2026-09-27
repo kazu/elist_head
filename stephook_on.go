@@ -21,10 +21,6 @@ import "sync/atomic"
 //   - "repair.prevLinked" (old, prev, copy): RepaireSliceAfterCopy changed prev.next from
 //     old to its copy, after it wrote the links of every copy; before it
 //     moves the next link from a node outside the slice.
-//   - "repair.putBack" (old, node, copy): a failed RepaireSliceAfterCopy led
-//     old to node, or left old leading to an insert that waits for node, and
-//     changed the link of node from the copy of old to old; before it goes on
-//     to the next link it puts back.
 //   - "replace.begin" (head, nextHead, next): ReplaceNext starts a try; before
 //     head.next and next.prev are read.
 //   - "replace.read" (head, nextHead, next): head.next and next.prev are read;
