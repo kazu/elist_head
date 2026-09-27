@@ -167,8 +167,8 @@ func (head *ListHead) diffPtrTo(t unsafe.Pointer) uintptr {
 
 func (head *ListHead) Init() {
 
-	head.prev = uintptr(0)
-	head.next = uintptr(0)
+	atomic.StoreUintptr(&head.prev, 0)
+	atomic.StoreUintptr(&head.next, 0)
 }
 
 // Deprecated ... _Init()
