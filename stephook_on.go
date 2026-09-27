@@ -12,7 +12,7 @@ import "sync/atomic"
 //   - "insert.begin" (new, nil, next): InsertBefore is called.
 //   - "add.cas1" (new, prev, next): before prev.next is changed to new.
 //   - "add.cas2" (new, prev, next): prev.next is new; before next.prev is changed.
-//   - "add.rollback" (new, prev, next): next.prev was not changed; before prev.next is put back.
+//   - "add.rollback" (new, prev, next): next.prev was not changed; before new is taken out with MarkForDelete.
 //   - "del.begin" (node, prev, next): MarkForDelete read the links of node; before they are marked.
 //   - "del.nextMarked" (node, prev, next): node.next is marked; before node.prev is marked.
 //   - "del.marked" (node, prev, next): both links of node are marked.
