@@ -26,8 +26,10 @@ import "sync/atomic"
 //     before any of them is changed.
 //   - "replace.cas2" (head, nextHead, next): head.next is nextHead; before
 //     next.prev is changed.
-//   - "replace.rollback" (head, nextHead, next): a CAS of the try failed and
-//     head.next and next.prev are put back; before the next try.
+//   - "replace.retry" (head, nextHead, next): the CAS of head.next failed and
+//     nothing was changed; before the next try.
+//   - "replace.rollback" (head, nextHead, next): the CAS of next.prev failed
+//     and head.next is put back; before the next try.
 type StepHook func(point string, a, b, c *ListHead)
 
 var stepHook atomic.Pointer[StepHook]

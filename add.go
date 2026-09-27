@@ -139,38 +139,56 @@ func (head *ListHead) ReplaceNext(nextHead *ListHead, nextTail *ListHead, next *
 
 	err = list_head.Retry(100, func(retry int) (finish bool, err error) {
 		stepAt("replace.begin", head, nextHead, next)
-		oldNext := head.next
-		oldNewNextPrev := next.prev
+		oldNext := atomic.LoadUintptr(&head.next)
+		oldNewNextPrev := atomic.LoadUintptr(&next.prev)
 		stepAt("replace.read", head, nextHead, next)
 
-		rollback := func(head, next *ListHead) {
-			atomic.StoreUintptr(&head.next, oldNext)
-			atomic.StoreUintptr(&next.prev, oldNewNextPrev)
+		// a delete of head or next has marked the link
+		if oldNext&1 != 0 || oldNewNextPrev&1 != 0 {
+			return true, ErrMarked
 		}
-		_ = rollback
 		atomic.StoreUintptr(&nextHead.prev, uintptr(nextHead.diffPtrToHead(head)))
 		atomic.StoreUintptr(&nextTail.next, uintptr(nextTail.diffPtrToHead(next)))
 
 		if !Cas(&head.next, oldNext, uintptr(head.diffPtrToHead(nextHead))) {
-			goto ROLLBACK
+			stepAt("replace.retry", head, nextHead, next)
+			return false, NewError(ErrTCasConflictOnAdd, errors.New("cas conflict in Replace"))
 		}
 		stepAt("replace.cas2", head, nextHead, next)
 
 		if !Cas(&next.prev, oldNewNextPrev, uintptr(next.diffPtrToHead(nextTail))) {
-			goto ROLLBACK
+			// a delete of the last replaced node has already linked next
+			// back to nextTail
+			if linksBackTo(next, nextTail, head) {
+				return true, nil
+			}
+			Cas(&head.next, uintptr(head.diffPtrToHead(nextHead)), oldNext)
+			stepAt("replace.rollback", head, nextHead, next)
+			return false, NewError(ErrTCasConflictOnAdd, errors.New("cas conflict in Replace"))
 		}
 
 		return true, err
-
-	ROLLBACK:
-		rollback(head, next)
-		stepAt("replace.rollback", head, nextHead, next)
-		return false, NewError(ErrTCasConflictOnAdd, errors.New("cas conflict in Replace"))
 	})
 	if err != nil {
 		//mode.SetError(err)
 	}
 	return
+}
+
+// linksBackTo reports whether walking the prevs from next reaches tail
+// before head.
+//
+//go:nocheckptr
+func linksBackTo(next, tail, head *ListHead) bool {
+	for cur := next.directPrev(); cur != next; cur = cur.directPrev() {
+		if cur == tail {
+			return true
+		}
+		if cur == head || cur.directPrev() == cur {
+			return false
+		}
+	}
+	return false
 }
 
 type mutex struct {
