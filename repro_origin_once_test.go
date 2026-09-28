@@ -16,15 +16,7 @@ import (
 // that leads back from it, while FindOrigin of the copy returned the node of
 // a.
 func TestFindOriginReadsTheTableOnce(t *testing.T) {
-	ends := make([]typedEntry, 2)
-	head, tail := &ends[0].ListHead, &ends[1].ListHead
-	elist.InitAsEmpty(head, tail)
 	x, a := make([]typedEntry, 1), make([]typedEntry, 1)
-	for _, n := range []*elist.ListHead{&x[0].ListHead, &a[0].ListHead} {
-		if _, err := tail.InsertBefore(n); err != nil {
-			t.Fatal(err)
-		}
-	}
 	// a move of x first, so that G1 reads a table with entries
 	moveEntries(x, make([]typedEntry, 1))
 
