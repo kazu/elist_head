@@ -337,6 +337,13 @@ func (mv *SliceMove) copyLinks(src, dst *ListHead) bool {
 		dst.prev, dst.next = 0, 0
 		return true
 	}
+	// p is between the CASes of its delete: the node before p leads to src
+	// already, and the copy would be linked from p only
+	if p.IsMarked() && findMoving(p) == nil {
+		if x := PrevNoM(p); x != p && x.directNext() == src {
+			return false
+		}
+	}
 	// q is between the CASes of its insert after src: the node after q
 	// still links back to src
 	if r := q.directNext(); r != q && r.directPrev() == src {
