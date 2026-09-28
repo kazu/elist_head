@@ -1,7 +1,6 @@
 package elist_head_test
 
 import (
-	"runtime"
 	"testing"
 	"unsafe"
 
@@ -44,6 +43,4 @@ func TestFindOriginOverTwoMoves(t *testing.T) {
 	if got := elist.FindOrigin(head); got != head {
 		t.Errorf("FindOrigin(head) = %p, want head %p", got, head)
 	}
-	runtime.KeepAlive(a)
-	runtime.KeepAlive(b)
 }

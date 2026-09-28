@@ -98,8 +98,14 @@ func findMoving(node *ListHead) *moving {
 	if list == nil {
 		return nil
 	}
+	return findMovingIn(*list, node)
+}
+
+// findMovingIn returns the entry of list of the slice that node lies in, or
+// nil.
+func findMovingIn(list []*moving, node *ListHead) *moving {
 	p := uintptr(unsafe.Pointer(node))
-	for _, e := range *list {
+	for _, e := range list {
 		if p >= e.start && p < e.last && e.src.Value() != nil {
 			return e
 		}
@@ -161,30 +167,26 @@ func MovedTo(node *ListHead) *ListHead {
 // FindOrigin returns one node for node and all the copies that moves of
 // slices made of it or it is made of: the node of the oldest move whose slice
 // is still kept, among the moves to the last copy of node, or that last copy
-// when there is none. It does not wait for a move. Two calls for nodes of one
-// line of copies return the same node while the callers keep the nodes they
-// pass.
+// when there is none. It does not wait for a move. Calls for nodes of one line
+// of copies that the callers keep return the same node while its slice is
+// kept; once the slice is gone, they return the node of the next oldest move
+// still kept, or the last copy.
 //
 //go:nocheckptr
 func FindOrigin(node *ListHead) *ListHead {
 	list := movings.list.Load()
+	stepAt("origin.loaded", node, nil, nil)
 	if list == nil {
 		return node
 	}
-	last := node
-	for m := findMoving(last); m != nil; m = findMoving(last) {
-		last = m.copyOf(last)
-	}
-	origin := last
+	// one table for both ways: a move added between two reads would lead
+	// node to a copy that the other read does not lead back from
+	origin := lastCopyIn(*list, node)
 	for {
-		p := uintptr(unsafe.Pointer(origin))
 		var from *ListHead
 		for _, e := range *list {
-			if d := uintptr(e.dst); p >= d && p < d+(e.last-e.start) {
-				if s := e.src.Value(); s != nil {
-					from = (*ListHead)(unsafe.Add(unsafe.Pointer(s), p-d))
-					break
-				}
+			if from = e.sourceOf(origin); from != nil {
+				break
 			}
 		}
 		if from == nil {
@@ -192,6 +194,55 @@ func FindOrigin(node *ListHead) *ListHead {
 		}
 		origin = from
 	}
+}
+
+// EachOfLine calls fn for each node that FindOrigin may return for node or
+// for its copies while the callers keep them: the last copy of node, and
+// every node of a slice still kept that moves copied to it, directly or
+// through other copies.
+func EachOfLine(node *ListHead, fn func(*ListHead)) {
+	list := movings.list.Load()
+	if list == nil {
+		fn(node)
+		return
+	}
+	eachSourceIn(*list, lastCopyIn(*list, node), fn)
+}
+
+// eachSourceIn calls fn for node and for every node of a slice still kept
+// that the moves of list copied to node, directly or through other copies.
+func eachSourceIn(list []*moving, node *ListHead, fn func(*ListHead)) {
+	fn(node)
+	for _, e := range list {
+		if from := e.sourceOf(node); from != nil {
+			eachSourceIn(list, from, fn)
+		}
+	}
+}
+
+// lastCopyIn returns the last copy of node that the moves of list made, or
+// node when they did not move it.
+func lastCopyIn(list []*moving, node *ListHead) *ListHead {
+	for m := findMovingIn(list, node); m != nil; m = findMovingIn(list, node) {
+		node = m.copyOf(node)
+	}
+	return node
+}
+
+// sourceOf returns the node of the slice of m that m copied to node, when
+// node lies in the copy of m and the slice is still kept, and nil otherwise.
+//
+//go:nocheckptr
+func (m *moving) sourceOf(node *ListHead) *ListHead {
+	p, d := uintptr(unsafe.Pointer(node)), uintptr(m.dst)
+	if p < d || p >= d+(m.last-m.start) {
+		return nil
+	}
+	s := m.src.Value()
+	if s == nil {
+		return nil
+	}
+	return (*ListHead)(unsafe.Add(unsafe.Pointer(s), p-d))
 }
 
 // movingBetween reports whether a marked node between head and to, on the
