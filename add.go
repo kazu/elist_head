@@ -58,9 +58,19 @@ func (head *ListHead) InsertBefore(new *ListHead, opts ...list_head.TravOpt) (*L
 // TryInsertBefore links new just before head in one attempt. It reads the
 // node before head once and links new there only if accept returns true for
 // that node. It returns an error without linking new when head is marked, is
-// not linked to a previous node, is rejected by accept, or when another
-// goroutine changed the links first; the caller finds the position again.
+// not linked to a previous node, is rejected by accept, when new is linked,
+// or when another goroutine changed the links first; the caller finds the
+// position again.
 func (head *ListHead) TryInsertBefore(new *ListHead, accept func(prev *ListHead) bool) error {
+	return head.TryInsertBeforeTaking(new, accept, nil)
+}
+
+// TryInsertBeforeTaking links new as TryInsertBefore does, and calls took,
+// when it is not nil, after new is taken for this insert and before new is
+// linked. Of two inserts of new at once, only the one that links new calls
+// took; took is called again when the insert takes new again after it put
+// new back.
+func (head *ListHead) TryInsertBeforeTaking(new *ListHead, accept func(prev *ListHead) bool, took func()) error {
 
 	if new.IsMarked() {
 		if findMoving(new) != nil {
@@ -83,7 +93,7 @@ func (head *ListHead) TryInsertBefore(new *ListHead, accept func(prev *ListHead)
 	if prev == head || !accept(prev) {
 		return ErrNotAppend
 	}
-	return listAddWitCas(toNode(new), prev, head, nil)
+	return listAddTaking(toNode(new), prev, head, nil, took)
 }
 
 func (head *ListHead) insertBefore(new *ListHead, opts ...list_head.TravOpt) error {
@@ -225,11 +235,23 @@ var mu4Add *mutex = newMutex(false)
 //        \--> new --/
 //   prev --> next     prev ---> new
 func listAddWitCas(new, prev, next *ListHead, fn func(*ListHead) *sync.RWMutex) (err error) {
+	return listAddTaking(new, prev, next, fn, nil)
+}
+
+// listAddTaking links new as listAddWitCas does, and calls took, when it is
+// not nil, after it took the links of new and before it links new.
+func listAddTaking(new, prev, next *ListHead, fn func(*ListHead) *sync.RWMutex, took func()) (err error) {
 	// backup for roolback
 	oNewPrev := atomic.LoadUintptr(&new.prev)
 	oNewNext := atomic.LoadUintptr(&new.next)
 	if (oNewPrev|oNewNext)&1 != 0 && findMoving(new) != nil {
 		return ErrMoved
+	}
+	// new is taken from no links by the CAS below, so that of two inserts
+	// of new only one links it; the other finds new linked
+	if oNewPrev != 0 || oNewNext != 0 {
+		return NewError(ErrTCasConflictOnAdd,
+			fmt.Errorf("listAddWithCas() new is linked: new=%s prev=%s next=%s", new.P(), prev.P(), next.P()))
 	}
 	toPrev := uintptr(new.diffPtrToHead(prev))
 	toNext := uintptr(new.diffPtrToHead(next))
@@ -253,14 +275,25 @@ func listAddWitCas(new, prev, next *ListHead, fn func(*ListHead) *sync.RWMutex) 
 	}
 	_ = rollback
 
-	// new.prev -> prev, new.next -> next
-	if !Cas(&new.prev, oNewPrev, toPrev) || !Cas(&new.next, oNewNext, toNext) {
+	// new.prev -> prev, new.next -> next; new.prev that another insert took
+	// first is not put back
+	if !Cas(&new.prev, oNewPrev, toPrev) {
+		if IsMoved(new) {
+			return ErrMoved
+		}
+		return NewError(ErrTCasConflictOnAdd,
+			fmt.Errorf("listAddWithCas() the links of new changed: new=%s prev=%s next=%s", new.P(), prev.P(), next.P()))
+	}
+	if !Cas(&new.next, oNewNext, toNext) {
 		rollback(new)
 		if IsMoved(new) {
 			return ErrMoved
 		}
 		return NewError(ErrTCasConflictOnAdd,
 			fmt.Errorf("listAddWithCas() the links of new changed: new=%s prev=%s next=%s", new.P(), prev.P(), next.P()))
+	}
+	if took != nil {
+		took()
 	}
 	// StoreListHead(&new.prev, prev)
 	// StoreListHead(&new.next, next)
