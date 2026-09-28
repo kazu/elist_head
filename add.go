@@ -77,8 +77,10 @@ func (head *ListHead) TryInsertBeforeTaking(new *ListHead, accept func(prev *Lis
 			return ErrMoved
 		}
 		if ok, _ := new.IsSafety(); ok {
-			atomic.StoreUintptr(&new.prev, 0)
-			atomic.StoreUintptr(&new.next, 0)
+			stepAt("insert.safe", new, nil, head)
+			// only while the marks stay: another insert of new may have
+			// cleared and taken the links already
+			new.InitMarked()
 		} else {
 			return ErrNoSafetyOnAdd
 		}
