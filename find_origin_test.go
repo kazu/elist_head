@@ -21,15 +21,8 @@ func moveEntries(src, dst []typedEntry) {
 // node, its copy, and the copy of that copy, also after the second move led
 // the entry of the first move to the last copy.
 func TestFindOriginOverTwoMoves(t *testing.T) {
-	ends := make([]typedEntry, 2)
-	head, tail := &ends[0].ListHead, &ends[1].ListHead
-	elist.InitAsEmpty(head, tail)
+	head := &make([]typedEntry, 1)[0].ListHead
 	a, b, c := make([]typedEntry, 2), make([]typedEntry, 2), make([]typedEntry, 2)
-	for i := range a {
-		if _, err := tail.InsertBefore(&a[i].ListHead); err != nil {
-			t.Fatal(err)
-		}
-	}
 	moveEntries(a, b)
 	moveEntries(b, c)
 
