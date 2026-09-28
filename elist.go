@@ -33,6 +33,7 @@ const (
 	ErrTOverRetyry
 	ErrTNoSafety
 	ErrTNoContinous
+	ErrTMoved
 )
 
 var (
@@ -47,6 +48,9 @@ var (
 	ErrFirstMarked       error = NewError(ErrTFirstMarked, errors.New("first element is marked"))
 	ErrNoSafetyOnAdd     error = NewError(ErrTNoSafety, errors.New("element is not safety to append"))
 	ErrNoContinous       error = NewError(ErrTNoContinous, errors.New("element is not continus"))
+	// ErrMoved tells that the element lies in a slice that a SliceMove
+	// replaces with its copy; MovedTo returns the copy
+	ErrMoved error = NewError(ErrTMoved, errors.New("element is moved"))
 	//ErrNoSafety          error = NewError(ErrTNoSafety, errors.New("element is not safety to append"))
 )
 

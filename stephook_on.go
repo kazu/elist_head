@@ -12,14 +12,31 @@ import "sync/atomic"
 //   - "insert.begin" (new, nil, next): InsertBefore is called.
 //   - "add.cas1" (new, prev, next): before prev.next is changed to new.
 //   - "add.cas2" (new, prev, next): prev.next is new; before next.prev is changed.
-//   - "add.rollback" (new, prev, next): next.prev was not changed; before new is taken out with MarkForDelete.
+//   - "add.rollback" (new, prev, next): next.prev was not changed, or a move marked new; before prev.next is put back to next.
 //   - "del.begin" (node, prev, next): MarkForDelete read the links of node; before they are marked.
 //   - "del.nextMarked" (node, prev, next): node.next is marked; before node.prev is marked.
 //   - "del.marked" (node, prev, next): both links of node are marked.
 //   - "del.relink" (node, prev, next): prev.next was node; before it is changed to next.
+//   - "del.prevRelinked" (node, prev, next): prev.next was changed from node to next; before MarkForDelete looks for a move.
+//   - "del.nextRelinked" (node, prev, next): next.prev was changed from node to prev; before MarkForDelete looks for a move.
 //   - "del.check" (node, prev, next): the links to node are changed; before they are checked.
-//   - "repair.prevLinked" (old, prev, copy): RepaireSliceAfterCopy changed prev.next from
-//     old to its copy, after it wrote the links of every copy; before it
+//   - "move.marked" (first, nil, nil): FreezeSlice marked both links of every
+//     node of the slice, first is its first node; before it reads the links.
+//   - "move.wait" (old, node, nil): FreezeSlice found an insert or a delete
+//     next to old between its CASes, or Relink found that node, outside the
+//     slice, does not lead to old; before it reads the links again.
+//   - "move.written" (first, nil, nil): the links and the data of the copies
+//     are written; before Relink leads the nodes outside the slice to them.
+//   - "move.waitWritten" (old, node, nil): Relink found that node, next to
+//     old, is a node of another slice that is moved; before it reads again
+//     whether the copy of node is written.
+//   - "move.waitDone" (node, nil, nil): MovedTo found the slice of node, whose
+//     move is not done; before it reads again whether it is.
+//   - "del.waitWritten" (node, nil, nil): MarkForDelete took node out of the
+//     list and found the slice of node, whose copies are not written; before
+//     it reads again whether they are.
+//   - "repair.prevLinked" (old, prev, copy): Relink changed prev.next from
+//     old to its copy, after the links of every copy were written; before it
 //     moves the next link from a node outside the slice.
 //   - "replace.begin" (head, nextHead, next): ReplaceNext starts a try; before
 //     head.next and next.prev are read.

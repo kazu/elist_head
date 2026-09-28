@@ -63,6 +63,9 @@ func (head *ListHead) InsertBefore(new *ListHead, opts ...list_head.TravOpt) (*L
 func (head *ListHead) TryInsertBefore(new *ListHead, accept func(prev *ListHead) bool) error {
 
 	if new.IsMarked() {
+		if findMoving(new) != nil {
+			return ErrMoved
+		}
 		if ok, _ := new.IsSafety(); ok {
 			atomic.StoreUintptr(&new.prev, 0)
 			atomic.StoreUintptr(&new.next, 0)
@@ -223,8 +226,13 @@ var mu4Add *mutex = newMutex(false)
 //   prev --> next     prev ---> new
 func listAddWitCas(new, prev, next *ListHead, fn func(*ListHead) *sync.RWMutex) (err error) {
 	// backup for roolback
-	oNewPrev := new.prev
-	oNewNext := new.next
+	oNewPrev := atomic.LoadUintptr(&new.prev)
+	oNewNext := atomic.LoadUintptr(&new.next)
+	if (oNewPrev|oNewNext)&1 != 0 && findMoving(new) != nil {
+		return ErrMoved
+	}
+	toPrev := uintptr(new.diffPtrToHead(prev))
+	toNext := uintptr(new.diffPtrToHead(next))
 	if fn != nil {
 		if !prev.Empty() {
 			fn(prev).Lock()
@@ -235,9 +243,10 @@ func listAddWitCas(new, prev, next *ListHead, fn func(*ListHead) *sync.RWMutex) 
 			defer fn(next).Unlock()
 		}
 	}
+	// a link of new that a move marked meanwhile stays as it is
 	rollback := func(new *ListHead) {
-		atomic.StoreUintptr(&new.prev, oNewPrev)
-		atomic.StoreUintptr(&new.next, oNewNext)
+		Cas(&new.prev, toPrev, oNewPrev)
+		Cas(&new.next, toNext, oNewNext)
 
 		// StoreListHead(&new.prev, (*ListHead)(unsafe.Pointer(oNewPrev)))
 		// StoreListHead(&new.next, (*ListHead)(unsafe.Pointer(oNewNext)))
@@ -245,10 +254,26 @@ func listAddWitCas(new, prev, next *ListHead, fn func(*ListHead) *sync.RWMutex) 
 	_ = rollback
 
 	// new.prev -> prev, new.next -> next
-	atomic.StoreUintptr(&new.prev, uintptr(new.diffPtrToHead(prev)))
-	atomic.StoreUintptr(&new.next, uintptr(new.diffPtrToHead(next)))
+	if !Cas(&new.prev, oNewPrev, toPrev) || !Cas(&new.next, oNewNext, toNext) {
+		rollback(new)
+		if IsMoved(new) {
+			return ErrMoved
+		}
+		return NewError(ErrTCasConflictOnAdd,
+			fmt.Errorf("listAddWithCas() the links of new changed: new=%s prev=%s next=%s", new.P(), prev.P(), next.P()))
+	}
 	// StoreListHead(&new.prev, prev)
 	// StoreListHead(&new.next, next)
+
+	// prev is deleted or moved: the CAS of prev.next fails on the mark,
+	// until the caller finds another position
+	if atomic.LoadUintptr(&prev.next)&1 != 0 {
+		rollback(new)
+		if IsMoved(new) {
+			return ErrMoved
+		}
+		return ErrMarked
+	}
 
 	mu4Add.Lock()
 	defer mu4Add.Unlock()
@@ -265,15 +290,12 @@ func listAddWitCas(new, prev, next *ListHead, fn func(*ListHead) *sync.RWMutex) 
 		goto ROLLBACK
 	}
 	stepAt("add.cas2", new, prev, next)
-	if !Cas(&next.prev, uintptr(next.diffPtrToHead(prev)), uintptr(next.diffPtrToHead(new))) {
+	// a move marked new, and may have taken it as not linked
+	if IsMoved(new) || !Cas(&next.prev, uintptr(next.diffPtrToHead(prev)), uintptr(next.diffPtrToHead(new))) {
 		//if !Cas(&next.prev, prev, new) {
 
 		stepAt("add.rollback", new, prev, next)
-		// take new out as a delete of new does, so that a delete of next
-		// that passed over the link from prev to new sees it removed
-		if err := new.MarkForDelete(); err != nil {
-			return err
-		}
+		undoLink(&prev.next, uintptr(prev.diffPtrToHead(new)), uintptr(prev.diffPtrToHead(next)))
 
 		goto ROLLBACK
 
@@ -284,6 +306,9 @@ func listAddWitCas(new, prev, next *ListHead, fn func(*ListHead) *sync.RWMutex) 
 ROLLBACK:
 
 	rollback(new)
+	if IsMoved(new) {
+		return ErrMoved
+	}
 	return NewError(ErrTCasConflictOnAdd,
 		fmt.Errorf("listAddWithCas() please retry: new=%s prev=%s next=%s", new.P(), prev.P(), next.P()))
 

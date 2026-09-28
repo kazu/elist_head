@@ -82,6 +82,25 @@ func (head *ListHead) MarkForDelete(opts ...list_head.TravOpt) (err error) {
 	)
 	_, _ = ErrDeketeStep2, ErrDeketeStep3
 
+	// the links of head that this delete marked, and the links of other
+	// nodes that it changed
+	var ownNext, ownPrev bool
+	type relink struct {
+		link     *uintptr
+		from, to uintptr
+	}
+	var relinked []relink
+	giveWay := func() (fin bool, err error) {
+		for i := len(relinked) - 1; i >= 0; i-- {
+			undoLink(relinked[i].link, relinked[i].to, relinked[i].from)
+		}
+		relinked = relinked[:0]
+		if findMoving(head) != nil {
+			return true, ErrMoved
+		}
+		return false, ErrDeketeStep2
+	}
+
 	try := func(retry int) (fin bool, err error) {
 		prev1 := head.directPrev()
 		next1 := head.directNext()
@@ -109,17 +128,28 @@ func (head *ListHead) MarkForDelete(opts ...list_head.TravOpt) (err error) {
 			runtime.Gosched()
 		}
 
-		if !MarkListHead(&head.next, uintptr(head.diffPtrToHead(next))) {
-			//		if !MarkListHead(&l.next, unsafe.Pointer(next)) {
-			//AddRecoverState("remove: retry marked next")
-			return false, ErrDeketeStep0
+		if !ownNext {
+			marked, moved := markOwn(head, &head.next, uintptr(head.diffPtrToHead(next)))
+			if moved {
+				return true, ErrMoved
+			}
+			if !marked {
+				//AddRecoverState("remove: retry marked next")
+				return false, ErrDeketeStep0
+			}
+			ownNext = true
 		}
 		stepAt("del.nextMarked", head, prev1, next1)
-		if !MarkListHead(&head.prev, uintptr(head.diffPtrToHead(prev))) {
-			//if !MarkListHead(&l.prev, unsafe.Pointer(prev)) {
-
-			//AddRecoverState("remove: retry marked prev")
-			return false, ErrDeketeStep1
+		if !ownPrev {
+			marked, moved := markOwn(head, &head.prev, uintptr(head.diffPtrToHead(prev)))
+			if moved {
+				return true, ErrMoved
+			}
+			if !marked {
+				//AddRecoverState("remove: retry marked prev")
+				return false, ErrDeketeStep1
+			}
+			ownPrev = true
 		}
 		stepAt("del.marked", head, prev1, next1)
 		if !prev1.Empty() {
@@ -131,19 +161,76 @@ func (head *ListHead) MarkForDelete(opts ...list_head.TravOpt) (err error) {
 		// marked, passing the marked nodes between them and head. An insert
 		// that has made only its first CAS next to head is waited for: it
 		// either finishes or removes its node.
+		//
+		// A node of a slice that is moved is replaced, not deleted: the
+		// delete does not pass over it, and does not take head out while
+		// head is moved. It puts back what it changed, and goes on after
+		// the move or with the copy of head. It looks for such a node
+		// again after each CAS, since the move may have started after
+		// the walk.
+		if findMoving(head) != nil {
+			return giveWay()
+		}
+		// head itself may be between the CASes of its insert, whose
+		// second CAS would link head again after the delete took it out.
+		// The node before head is not marked then; the link of a deleted
+		// node to head is a link that the delete of that node left.
+		if p := head.directPrev(); len(relinked) == 0 && !p.IsMarked() &&
+			p.directNext() == head && head.directNext().directPrev() != head {
+			return false, ErrDeketeStep2
+		}
 		if halfInsertedBefore(head) {
+			return false, ErrDeketeStep2
+		}
+		// the node after head that the node before head is led to is not
+		// between the CASes of its insert, whose undo takes it out
+		if halfInsertedAfter(head) {
 			return false, ErrDeketeStep2
 		}
 		if x, v := linkingPrev(head); x != nil && v&1 == 0 {
 			next := NextNoM(head)
+			if findMoving(head) != nil || movingBetween(head, x, false) || movingBetween(head, next, true) || IsMoved(next) {
+				return giveWay()
+			}
 			stepAt("del.relink", head, x, next)
-			Cas(&x.next, v, uintptr(x.diffPtrToHead(next)))
+			to := uintptr(x.diffPtrToHead(next))
+			if Cas(&x.next, v, to) {
+				relinked = append(relinked, relink{link: &x.next, from: v, to: to})
+				stepAt("del.prevRelinked", head, x, next)
+				if findMoving(head) != nil || movingBetween(head, x, false) || movingBetween(head, next, true) || IsMoved(next) {
+					return giveWay()
+				}
+			}
 		}
 		if halfInsertedAfter(head) {
 			return false, ErrDeketeStep2
 		}
+		// the node after head is relinked once the node before it is: a
+		// move waits for a delete that relinked one side only
+		if x, _ := linkingPrev(head); x != nil {
+			return false, ErrDeketeStep2
+		}
 		if z, v := linkingNext(head); z != nil && v&1 == 0 {
-			Cas(&z.prev, v, uintptr(z.diffPtrToHead(linkedBefore(head, z))))
+			before := linkedBefore(head, z)
+			if findMoving(head) != nil || movingBetween(head, z, true) || movingBetween(head, before, false) || IsMoved(before) {
+				return giveWay()
+			}
+			to := uintptr(z.diffPtrToHead(before))
+			if Cas(&z.prev, v, to) {
+				relinked = append(relinked, relink{link: &z.prev, from: v, to: to})
+				stepAt("del.nextRelinked", head, before, z)
+				// head is out of the list now: both links to it were
+				// changed while they had no mark, so a move that marked
+				// one of their nodes reads them after this, without
+				// head, and putting head back would link a node that
+				// the move left out. Only a move of the slice of head
+				// may have read the links before, when the nodes next to
+				// head are not moved: it took head as linked, and waits
+				// for them to lead to head. Then the delete gives way.
+				if m := findMoving(head); m != nil && m.tookLinked(head) {
+					return giveWay()
+				}
+			}
 		}
 		stepAt("del.check", head, prev1, next1)
 		if !head.unlinked() {

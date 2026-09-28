@@ -7,7 +7,6 @@
 package elist_head
 
 import (
-	"errors"
 	"sync/atomic"
 	"unsafe"
 
@@ -90,62 +89,10 @@ func OuterPtrs(sHead, sTail unsafe.Pointer, dHead unsafe.Pointer, size int, offs
 }
 
 // RepaireSliceAfterCopy leads the list to the copy at dHead of the slice of
-// nodes from sHead to sTail. The caller stops every writer that changes a
-// link of a node of the slice or of a node next to it until the repair
-// ends. When a link outside the slice changed anyway, it returns an error and
-// leaves the links it moved so far as they are.
-//
-//go:nocheckptr
+// nodes from sHead to sTail, which the caller copied before. It is FreezeSlice
+// and Relink of a SliceMove in one step, for a slice whose data no writer
+// changes meanwhile.
 func RepaireSliceAfterCopy(sHead, sTail unsafe.Pointer, dHead unsafe.Pointer, size int, offset int) error {
-
-	start := uintptr(sHead)
-	last := uintptr(sTail) + uintptr(size)
-
-	moved := int(uintptr(dHead)) - int(uintptr(sHead))
-
-	// outer reports whether the link v of the node at ptr leaves the slice
-	outer := func(ptr, v uintptr) bool {
-		return ptr+(v&^1) < start || ptr+(v&^1) > last
-	}
-	// a link of a node outside the slice that is moved to the copy
-	type outerLink struct {
-		link     *uintptr
-		old, new uintptr
-		prevSide bool
-		src, t   *ListHead
-	}
-	var links []outerLink
-
-	// write the links of the copy from the links the source has now, before
-	// any node outside the slice leads to the copy
-	for cur := unsafe.Add(sHead, offset); uintptr(cur) < uintptr(last); cur = unsafe.Add(cur, size) {
-		src := (*ListHead)(cur)
-		dst := (*ListHead)(unsafe.Add(cur, moved))
-		prev, next := atomic.LoadUintptr(&src.prev), atomic.LoadUintptr(&src.next)
-		if outer(uintptr(cur), prev) {
-			t := (*ListHead)(unsafe.Add(cur, int(prev&^1)))
-			links = append(links, outerLink{link: &t.next, old: uintptr(cur) - uintptr(unsafe.Pointer(t)), prevSide: true, src: src, t: t})
-			prev = IncPointer(prev, -moved)
-		}
-		if outer(uintptr(cur), next) {
-			t := (*ListHead)(unsafe.Add(cur, int(next&^1)))
-			links = append(links, outerLink{link: &t.prev, old: uintptr(cur) - uintptr(unsafe.Pointer(t)), src: src, t: t})
-			next = IncPointer(next, -moved)
-		}
-		atomic.StoreUintptr(&dst.prev, prev)
-		atomic.StoreUintptr(&dst.next, next)
-	}
-
-	// lead the nodes outside the slice to the copy
-	for i := range links {
-		l := &links[i]
-		l.new = IncPointer(l.old, moved)
-		if !Cas(l.link, l.old, l.new) {
-			return errors.New("duplicated rewrite outside ListHead")
-		}
-		if l.prevSide {
-			stepAt("repair.prevLinked", l.src, l.t, (*ListHead)(unsafe.Add(unsafe.Pointer(l.src), moved)))
-		}
-	}
+	FreezeSlice(sHead, sTail, dHead, size, offset).Relink()
 	return nil
 }
