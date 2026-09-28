@@ -66,10 +66,8 @@ func (head *ListHead) TryInsertBefore(new *ListHead, accept func(prev *ListHead)
 }
 
 // TryInsertBeforeTaking links new as TryInsertBefore does, and calls took,
-// when it is not nil, after new is taken for this insert and before new is
-// linked. Of two inserts of new at once, only the one that links new calls
-// took; took is called again when the insert takes new again after it put
-// new back.
+// when it is not nil, each time this insert takes new, before it links new or
+// puts new back. While one insert holds new, no other insert takes it.
 func (head *ListHead) TryInsertBeforeTaking(new *ListHead, accept func(prev *ListHead) bool, took func()) error {
 
 	if new.IsMarked() {
