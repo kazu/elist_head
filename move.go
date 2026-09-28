@@ -166,11 +166,12 @@ func MovedTo(node *ListHead) *ListHead {
 
 // FindOrigin returns one node for node and all the copies that moves of
 // slices made of it or it is made of: the node of the oldest move whose slice
-// is still kept, among the moves to the last copy of node, or that last copy
-// when there is none. It does not wait for a move. Calls for nodes of one line
-// of copies that the callers keep return the same node while its slice is
-// kept; once the slice is gone, they return the node of the next oldest move
-// still kept, or the last copy.
+// is still kept, among the moves to the last copy of node that a move wrote,
+// or that last copy when there is none. It does not wait for a move, and does
+// not go on to a copy that a move has not written yet. Calls for nodes of one
+// line of copies that the callers keep return the same node while its slice
+// is kept; once the slice is gone, they return the node of the next oldest
+// move still kept, or the last copy.
 //
 //go:nocheckptr
 func FindOrigin(node *ListHead) *ListHead {
@@ -197,9 +198,9 @@ func FindOrigin(node *ListHead) *ListHead {
 }
 
 // EachOfLine calls fn for each node that FindOrigin may return for node or
-// for its copies while the callers keep them: the last copy of node, and
-// every node of a slice still kept that moves copied to it, directly or
-// through other copies.
+// for its copies while the callers keep them: the last copy of node that a
+// move wrote, and every node of a slice still kept that moves copied to it,
+// directly or through other copies.
 func EachOfLine(node *ListHead, fn func(*ListHead)) {
 	list := movings.list.Load()
 	if list == nil {
@@ -220,10 +221,11 @@ func eachSourceIn(list []*moving, node *ListHead, fn func(*ListHead)) {
 	}
 }
 
-// lastCopyIn returns the last copy of node that the moves of list made, or
-// node when they did not move it.
+// lastCopyIn returns the last copy of node that the moves of list wrote, or
+// node when they did not. A move writes its copies before the list leads to
+// them, and the caller does not touch a copy while the move writes it.
 func lastCopyIn(list []*moving, node *ListHead) *ListHead {
-	for m := findMovingIn(list, node); m != nil; m = findMovingIn(list, node) {
+	for m := findMovingIn(list, node); m != nil && m.written.Load(); m = findMovingIn(list, node) {
 		node = m.copyOf(node)
 	}
 	return node
