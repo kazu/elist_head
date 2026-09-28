@@ -189,7 +189,10 @@ func (head *ListHead) MarkForDelete(opts ...list_head.TravOpt) (err error) {
 		}
 		if x, v := linkingPrev(head); x != nil && v&1 == 0 {
 			next := NextNoM(head)
-			if findMoving(head) != nil || movingBetween(head, x, false) || movingBetween(head, next, true) || IsMoved(next) {
+			stepAt("del.nextRead", head, x, next)
+			// a move may lead head to the copies after next was read, and
+			// movingBetween stops at a copy: head must lead to next still
+			if findMoving(head) != nil || movingBetween(head, x, false) || movingBetween(head, next, true) || IsMoved(next) || NextNoM(head) != next {
 				return giveWay()
 			}
 			stepAt("del.relink", head, x, next)
@@ -197,9 +200,10 @@ func (head *ListHead) MarkForDelete(opts ...list_head.TravOpt) (err error) {
 			if Cas(&x.next, v, to) {
 				relinked = append(relinked, relink{link: &x.next, from: v, to: to})
 				stepAt("del.prevRelinked", head, x, next)
-				if findMoving(head) != nil || movingBetween(head, x, false) || movingBetween(head, next, true) || IsMoved(next) {
+				if findMoving(head) != nil || movingBetween(head, x, false) || movingBetween(head, next, true) || IsMoved(next) || NextNoM(head) != next {
 					return giveWay()
 				}
+				stepAt("del.prevChecked", head, x, next)
 			}
 		}
 		if halfInsertedAfter(head) {
@@ -212,6 +216,7 @@ func (head *ListHead) MarkForDelete(opts ...list_head.TravOpt) (err error) {
 		}
 		if z, v := linkingNext(head); z != nil && v&1 == 0 {
 			before := linkedBefore(head, z)
+			stepAt("del.beforeRead", head, before, z)
 			if findMoving(head) != nil || movingBetween(head, z, true) || movingBetween(head, before, false) || IsMoved(before) {
 				return giveWay()
 			}
