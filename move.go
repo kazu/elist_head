@@ -158,6 +158,42 @@ func MovedTo(node *ListHead) *ListHead {
 	return m.copyOf(node)
 }
 
+// FindOrigin returns one node for node and all the copies that moves of
+// slices made of it or it is made of: the node of the oldest move whose slice
+// is still kept, among the moves to the last copy of node, or that last copy
+// when there is none. It does not wait for a move. Two calls for nodes of one
+// line of copies return the same node while the callers keep the nodes they
+// pass.
+//
+//go:nocheckptr
+func FindOrigin(node *ListHead) *ListHead {
+	list := movings.list.Load()
+	if list == nil {
+		return node
+	}
+	last := node
+	for m := findMoving(last); m != nil; m = findMoving(last) {
+		last = m.copyOf(last)
+	}
+	origin := last
+	for {
+		p := uintptr(unsafe.Pointer(origin))
+		var from *ListHead
+		for _, e := range *list {
+			if d := uintptr(e.dst); p >= d && p < d+(e.last-e.start) {
+				if s := e.src.Value(); s != nil {
+					from = (*ListHead)(unsafe.Add(unsafe.Pointer(s), p-d))
+					break
+				}
+			}
+		}
+		if from == nil {
+			return origin
+		}
+		origin = from
+	}
+}
+
 // movingBetween reports whether a marked node between head and to, on the
 // side of the next of head when forward is set and of its prev otherwise,
 // lies in a slice that is moved. A delete does not pass over such a node: it
