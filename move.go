@@ -183,8 +183,10 @@ func movingBetween(head, to *ListHead, forward bool) bool {
 	return false
 }
 
-// InitUnmarked clears the links of head as Init does. When a link is marked,
-// it leaves the links as they are and returns false.
+// InitUnmarked clears the links of head as Init does, prev first and then
+// next, and reports whether it cleared both. It stops at the first link that
+// is marked and returns false: that link and the ones after it stay as they
+// are, and a prev cleared before a marked next stays cleared.
 func (head *ListHead) InitUnmarked() bool {
 	for _, link := range [...]*uintptr{&head.prev, &head.next} {
 		for {

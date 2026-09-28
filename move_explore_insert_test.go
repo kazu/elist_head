@@ -138,12 +138,6 @@ func (l *mvinsList) insertOp(i int, at *elist.ListHead) op {
 				return err
 			}
 			switch le.Type {
-			case elist.ErrTMoved:
-				c := l.copyOf(i, n)
-				if c == nil {
-					return fmt.Errorf("%s: %v, and MovedTo of the new node is nil", name, err)
-				}
-				n = c
 			case elist.ErrTMarked:
 				// returned before a step point when pos is marked
 				l.wait(i)

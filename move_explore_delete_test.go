@@ -264,14 +264,6 @@ func (l *mvdelList) insertOp(at, n *elist.ListHead) op {
 			if err == nil {
 				return nil
 			}
-			if err == elist.ErrMoved {
-				c := elist.MovedTo(n)
-				if c == nil {
-					return fmt.Errorf("TryInsertBefore(%s): %v, and MovedTo returns nil", l.name(n), err)
-				}
-				n = c
-				continue
-			}
 			le, ok := err.(*elist.ListHeadError)
 			if !ok || err != elist.ErrMarked && le.Type != elist.ErrTCasConflictOnAdd {
 				return fmt.Errorf("TryInsertBefore(%s) before %s, whose prev is %s: %v", l.name(n), l.name(pos), l.name(pos.DirectPrev()), err)

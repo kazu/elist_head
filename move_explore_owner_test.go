@@ -5,7 +5,6 @@ package elist_head_test
 import (
 	"fmt"
 	"runtime"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -53,28 +52,13 @@ type mvownScene struct {
 	once   sync.Once
 	orig   elist.StepHook
 	mu     sync.Mutex
-	goids  map[int64]int
-}
-
-func mvownGoid() int64 {
-	var buf [64]byte
-	n := runtime.Stack(buf[:], false)
-	// goroutine 123 [running]:
-	f := strings.Fields(string(buf[:n]))
-	if len(f) < 2 {
-		return -1
-	}
-	id, err := strconv.ParseInt(f[1], 10, 64)
-	if err != nil {
-		return -1
-	}
-	return id
+	goids  map[uint64]int
 }
 
 // enter is called by the goroutine of the op g before anything else.
 func (s *mvownScene) enter(g int) {
 	s.mu.Lock()
-	s.goids[mvownGoid()] = g
+	s.goids[mvdelGoID()] = g
 	s.mu.Unlock()
 	s.once.Do(func() {
 		s.orig = *mvownHook.Load()
@@ -84,7 +68,7 @@ func (s *mvownScene) enter(g int) {
 
 func (s *mvownScene) step(point string, a, b, c *elist.ListHead) {
 	s.mu.Lock()
-	g, ok := s.goids[mvownGoid()]
+	g, ok := s.goids[mvdelGoID()]
 	s.mu.Unlock()
 	if !ok {
 		return
@@ -96,7 +80,7 @@ func (s *mvownScene) step(point string, a, b, c *elist.ListHead) {
 // linked.
 func mvownNew(t *testing.T) *mvownScene {
 	t.Helper()
-	s := &mvownScene{all: make([]typedEntry, 32), goids: map[int64]int{}}
+	s := &mvownScene{all: make([]typedEntry, 32), goids: map[uint64]int{}}
 	s.src, s.dst = s.all[10:13], s.all[20:23]
 	s.head, s.tail = &s.all[0].ListHead, &s.all[3].ListHead
 	elist.InitAsEmpty(s.head, s.tail)
