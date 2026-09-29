@@ -138,8 +138,8 @@ func (head *ListHead) MarkForDelete(opts ...list_head.TravOpt) (err error) {
 				return false, ErrDeketeStep0
 			}
 			ownNext = true
+			stepAt("del.nextMarked", head, prev1, next1)
 		}
-		stepAt("del.nextMarked", head, prev1, next1)
 		if !ownPrev {
 			marked, moved := markOwn(head, &head.prev, uintptr(head.diffPtrToHead(prev)))
 			if moved {
@@ -150,8 +150,8 @@ func (head *ListHead) MarkForDelete(opts ...list_head.TravOpt) (err error) {
 				return false, ErrDeketeStep1
 			}
 			ownPrev = true
+			stepAt("del.marked", head, prev1, next1)
 		}
-		stepAt("del.marked", head, prev1, next1)
 		if !prev1.Empty() {
 			// mode.Mu(prev1).Lock()
 			// defer mode.Mu(prev1).Unlock()

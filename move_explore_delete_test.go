@@ -513,9 +513,10 @@ func TestMvDelInsertTakenOutAfterDeleteLedToIt(t *testing.T) {
 	})
 	ins.waitReached(t)
 
-	del1, del2 := s.stopAt("del.marked", l.x), s.stopAt("del.marked", l.x)
+	del1 := s.stopAt("del.marked", l.x)
 	doneD, errD := goDo(l.deleteOp(l.x, false).do)
 	del1.waitReached(t)
+	del2 := s.stopAt("del.begin", l.x)
 	del1.Release()
 	del2.waitReached(t)
 	t.Logf("the delete led head.next to n:%s", l.links())
