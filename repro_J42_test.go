@@ -11,8 +11,7 @@ import (
 // replaces a with the chain n1, n2, and stops before its second CAS: p.next
 // is n1, and q.prev is still a. A delete of a must wait for the replace,
 // which links q back to n2 or puts a back into p.next when its second CAS
-// fails. The delete linked q back to n2 itself and returned instead, so that
-// a was reused while the replace could still put a back into p.next.
+// fails.
 func TestDeleteOfAReplacedNodeWaitsForTheReplace(t *testing.T) {
 	head, tail, nodes, n1, n2, names := newReplaceList(t, "p", "a", "q")
 	p, a, q := nodes[0], nodes[1], nodes[2]
@@ -42,8 +41,8 @@ func TestDeleteOfAReplacedNodeWaitsForTheReplace(t *testing.T) {
 // q with the chain n1, n2, and stops before its second CAS. The delete goes
 // on, and links q back to n2, the node that leads to q from p. x is inserted
 // before q, between n2 and q. The replace fails its second CAS, as q.prev is
-// x; it must end with p, n1, n2, x and q linked both ways: it put p.next back
-// and replaced the chain again over x.
+// x, and finds that q leads back to n2 through x; it must end with p, n1, n2,
+// x and q linked both ways.
 func TestReplaceNextKeepsAnInsertAfterADeleteLinkedNextBack(t *testing.T) {
 	head, tail, nodes, n1, n2, names := newReplaceList(t, "p", "a", "q", "x")
 	p, a, q, x := nodes[0], nodes[1], nodes[2], nodes[3]

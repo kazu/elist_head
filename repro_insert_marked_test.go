@@ -11,8 +11,7 @@ import (
 // TryInsertBefore takes a deleted node from its marks once. G1 inserts n,
 // which a delete left marked and safe to reuse, before t1, and stops before
 // it clears the links of n; G2 inserts n before t2 and returns; G1 goes on.
-// G1 must fail, and n must stay where G2 linked it. G1 stored 0 into the
-// links that G2 wrote, and linked n before t1 too.
+// G1 must fail, and n must stay where G2 linked it.
 func TestTryInsertBeforeTakesAMarkedNodeOnce(t *testing.T) {
 	e := make([]typedEntry, 5)
 	h1, t1, h2, t2, n := &e[0].ListHead, &e[1].ListHead, &e[2].ListHead, &e[3].ListHead, &e[4].ListHead

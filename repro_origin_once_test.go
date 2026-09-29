@@ -3,7 +3,6 @@
 package elist_head_test
 
 import (
-	"runtime"
 	"testing"
 
 	elist "github.com/kazu/elist_head"
@@ -11,10 +10,7 @@ import (
 
 // FindOrigin reads the table of moves once. G1 finds the origin of the node
 // of a and stops after it read the table; a moves to b; G1 goes on, and must
-// return what FindOrigin of the copy in b returns. It read the table again
-// to go on to the copy, and returned the copy, as the first read had no entry
-// that leads back from it, while FindOrigin of the copy returned the node of
-// a.
+// return what FindOrigin of the copy in b returns.
 func TestFindOriginReadsTheTableOnce(t *testing.T) {
 	x, a := make([]typedEntry, 1), make([]typedEntry, 1)
 	// a move of x first, so that G1 reads a table with entries
@@ -36,5 +32,4 @@ func TestFindOriginReadsTheTableOnce(t *testing.T) {
 	if want := elist.FindOrigin(&b[0].ListHead); got != want {
 		t.Errorf("FindOrigin(a) = %p and FindOrigin(b) = %p, want one node", got, want)
 	}
-	runtime.KeepAlive(a)
 }

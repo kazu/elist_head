@@ -13,8 +13,7 @@ import (
 // Nodes b, p and q lie in this order between head and tail. Inserting n
 // before q stops after it linked n from p, and deleting p stops after it
 // marked p. Deleting n must wait for the insert, which has not linked n from
-// q yet: it took n out from b instead, and the insert then linked n from q,
-// so that q led back to n, out of the list.
+// q yet.
 func TestMarkForDeleteWaitsForItsInsertAfterAMarkedNode(t *testing.T) {
 	entries := make([]typedEntry, 6)
 	head, tail := &entries[0].ListHead, &entries[5].ListHead
@@ -64,9 +63,7 @@ func purgeDo(n *elist.ListHead) (<-chan struct{}, *error) {
 // Nodes p, m, n and s lie in this order between head and tail, and are
 // purged at once. Purging n stops after it marked n, and purging m stops
 // after it led p to s, passing over n. Purging n must then wait for the
-// purge of m, which gives way when it finds s marked by the purge of s: it
-// led s back to p instead, relying on the link from p, and the purge of m
-// then put that link back, leading p to m and m to n, whose links are gone.
+// purge of m, which gives way when it finds s marked by the purge of s.
 func TestMarkForDeleteWaitsForTheDeleteThatTookItOut(t *testing.T) {
 	entries := make([]typedEntry, 6)
 	head, tail := &entries[0].ListHead, &entries[5].ListHead
@@ -107,8 +104,7 @@ func TestMarkForDeleteWaitsForTheDeleteThatTookItOut(t *testing.T) {
 // deleted twice at once. The first delete stops after it marked h, and the
 // second one after it took the marks as its own. The first delete ends, and
 // its caller clears the links of h, as Purge of skiplistmap does. The second
-// delete must end too: h is out of the list. It took h, whose links lead to h
-// itself, as an insert between its CASes, and tried again for ever.
+// delete must end too: h is out of the list.
 func TestMarkForDeleteTwiceEndsAfterTheLinksAreCleared(t *testing.T) {
 	entries := make([]typedEntry, 5)
 	head, tail := &entries[0].ListHead, &entries[4].ListHead
@@ -140,8 +136,7 @@ func TestMarkForDeleteTwiceEndsAfterTheLinksAreCleared(t *testing.T) {
 // tail. Purging p and purging s stop after they marked their nodes, and
 // purging q takes p, s and q out, passing over p and s. A move of the slice
 // then starts. The purges of p and s must end: p and s are out of the list
-// already. They gave way to the move instead, and the move waited for ever
-// on p and s, which still link to each other.
+// already.
 func TestMarkForDeleteOfAMovedNodeTakenOutEnds(t *testing.T) {
 	out := make([]typedEntry, 5)
 	src, dst := make([]typedEntry, 2), make([]typedEntry, 2)
@@ -195,8 +190,7 @@ func TestMarkForDeleteOfAMovedNodeTakenOutEnds(t *testing.T) {
 // Nodes x, the slice [h] and y lie in this order between head and tail.
 // Deleting h stops after it marked h, and a move of the slice then copies h
 // as linked and leads x and y to the copy. The delete of h must give way with
-// ErrMoved, so that the caller deletes the copy: it took h, which the move
-// replaced, as taken out before the move, and returned nil.
+// ErrMoved, so that the caller deletes the copy.
 func TestMarkForDeleteOfANodeReplacedByAMoveGivesWay(t *testing.T) {
 	out := make([]typedEntry, 4)
 	src, dst := make([]typedEntry, 1), make([]typedEntry, 1)
@@ -236,8 +230,7 @@ func TestMarkForDeleteOfANodeReplacedByAMoveGivesWay(t *testing.T) {
 // y and stops before it leads y back to x. A move of the slice then copies h
 // as linked, as m and y still lead to h, and stops before it leads m and y
 // to the copy. When the delete of m goes on and the move ends, the list must
-// hold x, the copy of h and y: the delete of m led y back to x, and the move
-// waited for ever for y to lead to h.
+// hold x, the copy of h and y.
 func TestMarkForDeleteGivesWayToAMoveOfANodeItPassedOver(t *testing.T) {
 	out := make([]typedEntry, 5)
 	src, dst := make([]typedEntry, 1), make([]typedEntry, 1)
@@ -288,10 +281,9 @@ func TestMarkForDeleteGivesWayToAMoveOfANodeItPassedOver(t *testing.T) {
 
 // Nodes p, b, a and c lie in this order between head and tail. Inserting n
 // before c stops after it linked n from a, and deleting a stops after it
-// marked a. Deleting b must wait for the insert, whose node n lies after a:
-// it linked p to n and n back to p. Deleting c then stops after it marked c,
-// so that the insert fails and puts n back, leaving p leading to n, which
-// leads nowhere.
+// marked a. Deleting b must wait for the insert, whose node n lies after a.
+// Deleting c then stops after it marked c, so that the insert fails and puts
+// n back.
 func TestMarkForDeleteWaitsForAnInsertAfterAMarkedNode(t *testing.T) {
 	entries := make([]typedEntry, 7)
 	head, tail := &entries[0].ListHead, &entries[6].ListHead
