@@ -62,13 +62,6 @@ func (head *ListHead) InsertBefore(new *ListHead, opts ...list_head.TravOpt) (*L
 // or when another goroutine changed the links first; the caller finds the
 // position again.
 func (head *ListHead) TryInsertBefore(new *ListHead, accept func(prev *ListHead) bool) error {
-	return head.TryInsertBeforeTaking(new, accept, nil)
-}
-
-// TryInsertBeforeTaking links new as TryInsertBefore does, and calls took,
-// when it is not nil, each time this insert takes new, before it links new or
-// puts new back. While one insert holds new, no other insert takes it.
-func (head *ListHead) TryInsertBeforeTaking(new *ListHead, accept func(prev *ListHead) bool, took func()) error {
 
 	if new.IsMarked() {
 		if findMoving(new) != nil {
@@ -93,7 +86,7 @@ func (head *ListHead) TryInsertBeforeTaking(new *ListHead, accept func(prev *Lis
 	if prev == head || !accept(prev) {
 		return ErrNotAppend
 	}
-	return listAddTaking(toNode(new), prev, head, nil, took)
+	return listAddWitCas(toNode(new), prev, head, nil)
 }
 
 func (head *ListHead) insertBefore(new *ListHead, opts ...list_head.TravOpt) error {
@@ -235,12 +228,6 @@ var mu4Add *mutex = newMutex(false)
 //        \--> new --/
 //   prev --> next     prev ---> new
 func listAddWitCas(new, prev, next *ListHead, fn func(*ListHead) *sync.RWMutex) (err error) {
-	return listAddTaking(new, prev, next, fn, nil)
-}
-
-// listAddTaking links new as listAddWitCas does, and calls took, when it is
-// not nil, after it took the links of new and before it links new.
-func listAddTaking(new, prev, next *ListHead, fn func(*ListHead) *sync.RWMutex, took func()) (err error) {
 	// backup for roolback
 	oNewPrev := atomic.LoadUintptr(&new.prev)
 	oNewNext := atomic.LoadUintptr(&new.next)
@@ -291,9 +278,6 @@ func listAddTaking(new, prev, next *ListHead, fn func(*ListHead) *sync.RWMutex, 
 		}
 		return NewError(ErrTCasConflictOnAdd,
 			fmt.Errorf("listAddWithCas() the links of new changed: new=%s prev=%s next=%s", new.P(), prev.P(), next.P()))
-	}
-	if took != nil {
-		took()
 	}
 	// StoreListHead(&new.prev, prev)
 	// StoreListHead(&new.next, next)
