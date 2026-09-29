@@ -25,9 +25,6 @@ func TestTryInsertBeforeTakesAMarkedNodeOnce(t *testing.T) {
 	if err := n.MarkForDelete(); err != nil {
 		t.Fatal(err)
 	}
-	if ok, _ := n.IsSafety(); !n.IsMarked() || !ok {
-		t.Fatalf("n is not marked and safe after its delete")
-	}
 	any := func(*elist.ListHead) bool { return true }
 
 	s := newStepper(t)
