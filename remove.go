@@ -215,7 +215,15 @@ func (head *ListHead) MarkForDelete(opts ...list_head.TravOpt) (err error) {
 		if x, _ := linkingPrev(head); x != nil {
 			return false, ErrDeketeStep2
 		}
-		if z, v := linkingNext(head); z != nil && v&1 == 0 {
+		z, v := linkingNext(head)
+		if z != nil && len(relinked) == 0 {
+			// the node before head does not lead to head, and this delete
+			// did not relink it: another delete led it past head, and
+			// relinks the node after head too or puts its link back when
+			// it gives way, or an insert before head is between its CASes
+			return false, ErrDeketeStep2
+		}
+		if z != nil && v&1 == 0 {
 			before := linkedBefore(head, z)
 			stepAt("del.beforeRead", head, before, z)
 			if findMoving(head) != nil || movingBetween(head, z, true) || movingBetween(head, before, false) || IsMoved(before) {

@@ -48,6 +48,60 @@ func TestMarkForDeleteWaitsForItsInsertAfterAMarkedNode(t *testing.T) {
 	waitClosed(t, doneP, "delete p")
 }
 
+// purgeDo deletes n as Purge of skiplistmap does: it clears the links of n
+// once the delete returns.
+func purgeDo(n *elist.ListHead) (<-chan struct{}, *error) {
+	return goDo(func() error {
+		err := n.MarkForDelete()
+		if err == nil {
+			n.InitMarked()
+		}
+		return err
+	})
+}
+
+// Nodes p, m, n and s lie in this order between head and tail, and are
+// purged at once. Purging n stops after it marked n, and purging m stops
+// after it led p to s, passing over n. Purging n must then wait for the
+// purge of m, which gives way when it finds s marked by the purge of s: it
+// led s back to p instead, relying on the link from p, and the purge of m
+// then put that link back, leading p to m and m to n, whose links are gone.
+func TestMarkForDeleteWaitsForTheDeleteThatTookItOut(t *testing.T) {
+	entries := make([]typedEntry, 6)
+	head, tail := &entries[0].ListHead, &entries[5].ListHead
+	elist.InitAsEmpty(head, tail)
+	p, m, n, s := &entries[1].ListHead, &entries[2].ListHead, &entries[3].ListHead, &entries[4].ListHead
+	for _, x := range []*elist.ListHead{p, m, n, s} {
+		if _, err := tail.InsertBefore(x); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	st := newStepper(t)
+	delN := st.stopAt("del.marked", n)
+	doneN, _ := purgeDo(n)
+	delN.waitReached(t)
+	delM := st.stopAt("del.prevRelinked", m)
+	doneM, _ := purgeDo(m)
+	delM.waitReached(t)
+	delN.Release()
+	select {
+	case <-doneN:
+	case <-time.After(200 * time.Millisecond):
+	}
+	delS := st.stopAt("del.marked", s)
+	doneS, _ := purgeDo(s)
+	delS.waitReached(t)
+	delM.Release()
+	waitClosed(t, doneM, "purge m")
+	delS.Release()
+	waitClosed(t, doneN, "purge n")
+	waitClosed(t, doneS, "purge s")
+
+	names := map[*elist.ListHead]string{head: "head", p: "p", m: "m", n: "n", s: "s", tail: "tail"}
+	assertLinked(t, names, head, tail, "p")
+}
+
 // Nodes p, b, a and c lie in this order between head and tail. Inserting n
 // before c stops after it linked n from a, and deleting a stops after it
 // marked a. Deleting b must wait for the insert, whose node n lies after a:

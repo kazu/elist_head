@@ -257,7 +257,7 @@ func TestMarkForDeleteKeepsInsertBeforeNode(t *testing.T) {
 // before a stops before its first CAS. Deleting a marks its links and stops
 // before it changes p.next from a to y. The insert then changes p.next to n,
 // fails on the mark of a.prev and stops before putting p.next back, so the
-// delete fails to change p.next and stops before its check. When the insert
+// delete fails to change p.next and tries again. When the insert
 // has put p.next back to a and given up, and the delete finishes, p must be
 // linked to y.
 func TestMarkForDeleteRetriesWhileLinkedTo(t *testing.T) {
@@ -281,12 +281,12 @@ func TestMarkForDeleteRetriesWhileLinkedTo(t *testing.T) {
 	rollback := s.stopAt("add.rollback", n)
 	ins.Release()
 	rollback.waitReached(t)
-	check := s.stopAt("del.check", a)
+	retry := s.stopAt("del.begin", a)
 	relink.Release()
-	check.waitReached(t)
+	retry.waitReached(t)
 	rollback.Release()
 	waitClosed(t, doneI, "insert n")
-	check.Release()
+	retry.Release()
 	waitClosed(t, doneD, "delete a")
 	if *errD != nil {
 		t.Fatalf("delete a: %v", *errD)
