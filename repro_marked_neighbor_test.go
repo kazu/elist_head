@@ -103,6 +103,39 @@ func TestMarkForDeleteWaitsForTheDeleteThatTookItOut(t *testing.T) {
 	assertLinked(t, names, head, tail, "p")
 }
 
+// Nodes p, h and q lie in this order between head and tail, and h is
+// deleted twice at once. The first delete stops after it marked h, and the
+// second one after it took the marks as its own. The first delete ends, and
+// its caller clears the links of h, as Purge of skiplistmap does. The second
+// delete must end too: h is out of the list. It took h, whose links lead to h
+// itself, as an insert between its CASes, and tried again for ever.
+func TestMarkForDeleteTwiceEndsAfterTheLinksAreCleared(t *testing.T) {
+	entries := make([]typedEntry, 5)
+	head, tail := &entries[0].ListHead, &entries[4].ListHead
+	elist.InitAsEmpty(head, tail)
+	p, h, q := &entries[1].ListHead, &entries[2].ListHead, &entries[3].ListHead
+	for _, n := range []*elist.ListHead{p, h, q} {
+		if _, err := tail.InsertBefore(n); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	st := newStepper(t)
+	del1 := st.stopAt("del.marked", h)
+	done1, _ := purgeDo(h)
+	del1.waitReached(t)
+	del2 := st.stopAt("del.begin", h)
+	done2, _ := goDo(func() error { return h.MarkForDelete() })
+	del2.waitReached(t)
+	del1.Release()
+	waitClosed(t, done1, "the first delete of h")
+	del2.Release()
+	waitClosed(t, done2, "the second delete of h")
+
+	names := map[*elist.ListHead]string{head: "head", p: "p", h: "h", q: "q", tail: "tail"}
+	assertLinked(t, names, head, tail, "p", "q")
+}
+
 // Nodes x, the slice [p s], q and z lie in this order between head and
 // tail. Purging p and purging s stop after they marked their nodes, and
 // purging q takes p, s and q out, passing over p and s. A move of the slice
@@ -157,6 +190,100 @@ func TestMarkForDeleteOfAMovedNodeTakenOutEnds(t *testing.T) {
 
 	names := map[*elist.ListHead]string{head: "head", x: "x", p: "p", s: "s", q: "q", z: "z", tail: "tail"}
 	assertLinked(t, names, head, tail, "x", "z")
+}
+
+// Nodes x, the slice [h] and y lie in this order between head and tail.
+// Deleting h stops after it marked h, and a move of the slice then copies h
+// as linked and leads x and y to the copy. The delete of h must give way with
+// ErrMoved, so that the caller deletes the copy: it took h, which the move
+// replaced, as taken out before the move, and returned nil.
+func TestMarkForDeleteOfANodeReplacedByAMoveGivesWay(t *testing.T) {
+	out := make([]typedEntry, 4)
+	src, dst := make([]typedEntry, 1), make([]typedEntry, 1)
+	head, x, y, tail := &out[0].ListHead, &out[1].ListHead, &out[2].ListHead, &out[3].ListHead
+	h := &src[0].ListHead
+	elist.InitAsEmpty(head, tail)
+	for _, n := range []*elist.ListHead{x, h, y} {
+		if _, err := tail.InsertBefore(n); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	st := newStepper(t)
+	del := st.stopAt("del.marked", h)
+	doneD, errD := goDo(func() error { return h.MarkForDelete() })
+	del.waitReached(t)
+	doneM, _ := goDo(func() error {
+		mv := elist.FreezeSlice(
+			unsafe.Pointer(&src[0]),
+			unsafe.Pointer(&src[len(src)-1]),
+			unsafe.Pointer(&dst[0]),
+			int(unsafe.Sizeof(src[0])),
+			int(unsafe.Offsetof(src[0].ListHead)))
+		mv.Relink()
+		return nil
+	})
+	waitClosed(t, doneM, "move")
+	del.Release()
+	waitClosed(t, doneD, "delete h")
+	if *errD != elist.ErrMoved {
+		t.Errorf("delete h = %v, want ErrMoved", *errD)
+	}
+}
+
+// Nodes x, m, the slice [h] and y lie in this order between head and tail.
+// Deleting h stops after it marked h. Deleting m passes over h: it leads x to
+// y and stops before it leads y back to x. A move of the slice then copies h
+// as linked, as m and y still lead to h, and stops before it leads m and y
+// to the copy. When the delete of m goes on and the move ends, the list must
+// hold x, the copy of h and y: the delete of m led y back to x, and the move
+// waited for ever for y to lead to h.
+func TestMarkForDeleteGivesWayToAMoveOfANodeItPassedOver(t *testing.T) {
+	out := make([]typedEntry, 5)
+	src, dst := make([]typedEntry, 1), make([]typedEntry, 1)
+	head, x, m, y, tail := &out[0].ListHead, &out[1].ListHead, &out[2].ListHead, &out[3].ListHead, &out[4].ListHead
+	h := &src[0].ListHead
+	elist.InitAsEmpty(head, tail)
+	for _, n := range []*elist.ListHead{x, m, h, y} {
+		if _, err := tail.InsertBefore(n); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	st := newStepper(t)
+	delH := st.stopAt("del.marked", h)
+	doneH, _ := goDo(func() error { return h.MarkForDelete() })
+	delH.waitReached(t)
+	delM := st.stopAt("del.nextRelink", m)
+	doneD, _ := purgeDo(m)
+	delM.waitReached(t)
+	frozen, relink := make(chan struct{}), make(chan struct{})
+	doneM, _ := goDo(func() error {
+		mv := elist.FreezeSlice(
+			unsafe.Pointer(&src[0]),
+			unsafe.Pointer(&src[len(src)-1]),
+			unsafe.Pointer(&dst[0]),
+			int(unsafe.Sizeof(src[0])),
+			int(unsafe.Offsetof(src[0].ListHead)))
+		close(frozen)
+		<-relink
+		mv.Relink()
+		return nil
+	})
+	waitClosed(t, frozen, "copy of h")
+	delM.Release()
+	select {
+	case <-doneD:
+	case <-time.After(200 * time.Millisecond):
+	}
+	close(relink)
+	waitClosed(t, doneM, "move")
+	waitClosed(t, doneD, "purge m")
+	delH.Release()
+	waitClosed(t, doneH, "delete h")
+
+	names := map[*elist.ListHead]string{head: "head", x: "x", m: "m", h: "h", &dst[0].ListHead: "h'", y: "y", tail: "tail"}
+	assertLinked(t, names, head, tail, "x", "h'", "y")
 }
 
 // Nodes p, b, a and c lie in this order between head and tail. Inserting n

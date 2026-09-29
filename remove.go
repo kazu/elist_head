@@ -169,9 +169,10 @@ func (head *ListHead) MarkForDelete(opts ...list_head.TravOpt) (err error) {
 		// again after each CAS, since the move may have started after
 		// the walk. A delete that passed over head before the move started
 		// took head out already: nothing is left to put back, and the move
-		// takes head as not linked once its links are cleared.
-		if findMoving(head) != nil {
-			if len(relinked) == 0 && head.unlinked() {
+		// takes head as not linked once its links are cleared. A head that
+		// the move copied as linked is replaced by its copy, not taken out.
+		if m := findMoving(head); m != nil {
+			if len(relinked) == 0 && head.unlinked() && !m.copiedLinked(head) {
 				return true, nil
 			}
 			return giveWay()
@@ -181,7 +182,7 @@ func (head *ListHead) MarkForDelete(opts ...list_head.TravOpt) (err error) {
 		// the node after head still links back to the node before head,
 		// which a delete may have marked meanwhile. A link to head of any
 		// other marked node is a link that the delete of that node left.
-		if p, q := head.directPrev(), head.directNext(); len(relinked) == 0 && p.directNext() == head &&
+		if p, q := head.directPrev(), head.directNext(); len(relinked) == 0 && p != head && p.directNext() == head &&
 			(q.directPrev() == p || !p.IsMarked() && q.directPrev() != head) {
 			return false, ErrDeketeStep2
 		}
@@ -235,6 +236,7 @@ func (head *ListHead) MarkForDelete(opts ...list_head.TravOpt) (err error) {
 				return giveWay()
 			}
 			to := uintptr(z.diffPtrToHead(before))
+			stepAt("del.nextRelink", head, before, z)
 			if Cas(&z.prev, v, to) {
 				relinked = append(relinked, relink{link: &z.prev, from: v, to: to})
 				stepAt("del.nextRelinked", head, before, z)
@@ -245,7 +247,13 @@ func (head *ListHead) MarkForDelete(opts ...list_head.TravOpt) (err error) {
 				// the move left out. Only a move of the slice of head
 				// may have read the links before, when the nodes next to
 				// head are not moved: it took head as linked, and waits
-				// for them to lead to head. Then the delete gives way.
+				// for them to lead to head. Then the delete gives way. So
+				// it does for a move of a node that it passed over after
+				// head, which may have taken that node as linked before
+				// the CAS.
+				if movingBetween(head, z, true) {
+					return giveWay()
+				}
 				if m := findMoving(head); m != nil && m.tookLinked(head) {
 					return giveWay()
 				}

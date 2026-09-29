@@ -138,6 +138,15 @@ func (m *moving) tookLinked(node *ListHead) bool {
 		stepAt("del.waitWritten", node, nil, nil)
 		runtime.Gosched()
 	}
+	return m.copiedLinked(node)
+}
+
+// copiedLinked reports whether the move has written the links of the copies
+// and took node, a node of its slice, as linked in the list.
+func (m *moving) copiedLinked(node *ListHead) bool {
+	if !m.written.Load() {
+		return false
+	}
 	c := m.copyOf(node)
 	return atomic.LoadUintptr(&c.prev)|atomic.LoadUintptr(&c.next) != 0
 }

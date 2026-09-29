@@ -18,6 +18,7 @@ import "sync/atomic"
 //   - "del.marked" (node, prev, next): both links of node are marked.
 //   - "del.relink" (node, prev, next): prev.next was node; before it is changed to next.
 //   - "del.prevRelinked" (node, prev, next): prev.next was changed from node to next; before MarkForDelete looks for a move.
+//   - "del.nextRelink" (node, prev, next): next.prev was node; before it is changed to prev.
 //   - "del.nextRelinked" (node, prev, next): next.prev was changed from node to prev; before MarkForDelete looks for a move.
 //   - "del.check" (node, prev, next): the links to node are changed; before they are checked.
 //   - "move.marked" (first, nil, nil): FreezeSlice marked both links of every

@@ -54,7 +54,10 @@ type choice struct{ picked, of int }
 
 func (r *run) hook(point string, a, b, c *elist.ListHead) {
 	g, ok := r.owner[a]
-	if !ok {
+	// del.nextRelink is for the step tests of a move between the check and
+	// the CAS of the second relink; the schedules here do not split there,
+	// or they grow too many to run
+	if !ok || point == "del.nextRelink" {
 		return
 	}
 	r.events <- stepEvent{g: g, point: point}
