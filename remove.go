@@ -172,11 +172,12 @@ func (head *ListHead) MarkForDelete(opts ...list_head.TravOpt) (err error) {
 			return giveWay()
 		}
 		// head itself may be between the CASes of its insert, whose
-		// second CAS would link head again after the delete took it out.
-		// The node before head is not marked then; the link of a deleted
-		// node to head is a link that the delete of that node left.
-		if p := head.directPrev(); len(relinked) == 0 && !p.IsMarked() &&
-			p.directNext() == head && head.directNext().directPrev() != head {
+		// second CAS would link head again after the delete took it out:
+		// the node after head still links back to the node before head,
+		// which a delete may have marked meanwhile. A link to head of any
+		// other marked node is a link that the delete of that node left.
+		if p, q := head.directPrev(), head.directNext(); len(relinked) == 0 && p.directNext() == head &&
+			(q.directPrev() == p || !p.IsMarked() && q.directPrev() != head) {
 			return false, ErrDeketeStep2
 		}
 		if halfInsertedBefore(head) {
@@ -382,8 +383,9 @@ func halfInsertedBefore(head *ListHead) bool {
 }
 
 // halfInsertedAfter reports whether the nearest node after head that is not
-// marked is linked from head while the node after it still links back to
-// head: an insert after head has made its first CAS and not its second.
+// marked is linked from head, passing the marked nodes between them, while
+// the node after it still links back to head or to one of those nodes: an
+// insert after them has made its first CAS and not its second.
 //
 //go:nocheckptr
 func halfInsertedAfter(head *ListHead) bool {
@@ -391,7 +393,16 @@ func halfInsertedAfter(head *ListHead) bool {
 	if z == head || z.directNext() == z {
 		return false
 	}
-	return z.directNext().directPrev() == head
+	back := z.directNext().directPrev()
+	for cur := head; cur != z; cur = cur.directNext() {
+		if cur == back {
+			return true
+		}
+		if cur.directNext() == cur || cur != head && !cur.IsMarked() {
+			break
+		}
+	}
+	return false
 }
 
 // linkedBefore returns the node whose next is z, walking forward from the
