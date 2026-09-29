@@ -172,11 +172,6 @@ func (head *ListHead) ReplaceNext(nextHead *ListHead, nextTail *ListHead, next *
 		stepAt("replace.cas2", head, nextHead, next)
 
 		if !Cas(&next.prev, oldNewNextPrev, uintptr(next.diffPtrToHead(nextTail))) {
-			// a delete of the last replaced node has already linked next
-			// back to nextTail
-			if linksBackTo(next, nextTail, head) {
-				return true, nil
-			}
 			Cas(&head.next, uintptr(head.diffPtrToHead(nextHead)), oldNext)
 			stepAt("replace.rollback", head, nextHead, next)
 			return false, NewError(ErrTCasConflictOnAdd, errors.New("cas conflict in Replace"))
@@ -188,22 +183,6 @@ func (head *ListHead) ReplaceNext(nextHead *ListHead, nextTail *ListHead, next *
 		//mode.SetError(err)
 	}
 	return
-}
-
-// linksBackTo reports whether walking the prevs from next reaches tail
-// before head.
-//
-//go:nocheckptr
-func linksBackTo(next, tail, head *ListHead) bool {
-	for cur := next.directPrev(); cur != next; cur = cur.directPrev() {
-		if cur == tail {
-			return true
-		}
-		if cur == head || cur.directPrev() == cur {
-			return false
-		}
-	}
-	return false
 }
 
 type mutex struct {
