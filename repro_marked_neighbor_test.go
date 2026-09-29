@@ -5,6 +5,7 @@ package elist_head_test
 import (
 	"testing"
 	"time"
+	"unsafe"
 
 	elist "github.com/kazu/elist_head"
 )
@@ -100,6 +101,62 @@ func TestMarkForDeleteWaitsForTheDeleteThatTookItOut(t *testing.T) {
 
 	names := map[*elist.ListHead]string{head: "head", p: "p", m: "m", n: "n", s: "s", tail: "tail"}
 	assertLinked(t, names, head, tail, "p")
+}
+
+// Nodes x, the slice [p s], q and z lie in this order between head and
+// tail. Purging p and purging s stop after they marked their nodes, and
+// purging q takes p, s and q out, passing over p and s. A move of the slice
+// then starts. The purges of p and s must end: p and s are out of the list
+// already. They gave way to the move instead, and the move waited for ever
+// on p and s, which still link to each other.
+func TestMarkForDeleteOfAMovedNodeTakenOutEnds(t *testing.T) {
+	out := make([]typedEntry, 5)
+	src, dst := make([]typedEntry, 2), make([]typedEntry, 2)
+	head, x, q, z, tail := &out[0].ListHead, &out[1].ListHead, &out[2].ListHead, &out[3].ListHead, &out[4].ListHead
+	p, s := &src[0].ListHead, &src[1].ListHead
+	elist.InitAsEmpty(head, tail)
+	for _, n := range []*elist.ListHead{x, p, s, q, z} {
+		if _, err := tail.InsertBefore(n); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	st := newStepper(t)
+	delP := st.stopAt("del.marked", p)
+	doneP, errP := purgeDo(p)
+	delP.waitReached(t)
+	delS := st.stopAt("del.marked", s)
+	doneS, errS := purgeDo(s)
+	delS.waitReached(t)
+	doneQ, errQ := purgeDo(q)
+	waitClosed(t, doneQ, "purge q")
+	if *errQ != nil {
+		t.Fatalf("purge q: %v", *errQ)
+	}
+	marked := st.stopAt("move.marked", p)
+	doneM, _ := goDo(func() error {
+		mv := elist.FreezeSlice(
+			unsafe.Pointer(&src[0]),
+			unsafe.Pointer(&src[len(src)-1]),
+			unsafe.Pointer(&dst[0]),
+			int(unsafe.Sizeof(src[0])),
+			int(unsafe.Offsetof(src[0].ListHead)))
+		mv.Relink()
+		return nil
+	})
+	marked.waitReached(t)
+	marked.Release()
+	delP.Release()
+	delS.Release()
+	waitClosed(t, doneP, "purge p")
+	waitClosed(t, doneS, "purge s")
+	waitClosed(t, doneM, "move")
+	if *errP != nil || *errS != nil {
+		t.Errorf("purge p, purge s = %v, %v, want nil, nil", *errP, *errS)
+	}
+
+	names := map[*elist.ListHead]string{head: "head", x: "x", p: "p", s: "s", q: "q", z: "z", tail: "tail"}
+	assertLinked(t, names, head, tail, "x", "z")
 }
 
 // Nodes p, b, a and c lie in this order between head and tail. Inserting n

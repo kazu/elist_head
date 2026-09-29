@@ -167,8 +167,13 @@ func (head *ListHead) MarkForDelete(opts ...list_head.TravOpt) (err error) {
 		// head is moved. It puts back what it changed, and goes on after
 		// the move or with the copy of head. It looks for such a node
 		// again after each CAS, since the move may have started after
-		// the walk.
+		// the walk. A delete that passed over head before the move started
+		// took head out already: nothing is left to put back, and the move
+		// takes head as not linked once its links are cleared.
 		if findMoving(head) != nil {
+			if len(relinked) == 0 && head.unlinked() {
+				return true, nil
+			}
 			return giveWay()
 		}
 		// head itself may be between the CASes of its insert, whose
