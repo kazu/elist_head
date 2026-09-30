@@ -48,6 +48,14 @@ func (old *ListHead) ReplaceWith(fresh *ListHead) error {
 
 	for {
 		prev = fresh.directPrev()
+		if prev.IsMarked() {
+			// A neighbouring replacement can repair old.prev after fresh
+			// copied it. Follow that repair before publishing from the left.
+			if current := old.directPrev(); current != prev {
+				Cas(&fresh.prev, fresh.diffPtrToHead(prev), fresh.diffPtrToHead(current))
+				continue
+			}
+		}
 		v := atomic.LoadUintptr(&prev.next)
 		if v&^1 == prev.diffPtrToHead(old) {
 			if !Cas(&prev.next, v, prev.diffPtrToHead(fresh)|v&1) {
