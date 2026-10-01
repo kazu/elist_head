@@ -55,18 +55,27 @@ func (old *ListHead) ReplaceWith(fresh *ListHead) error {
 				Cas(&fresh.prev, fresh.diffPtrToHead(prev), fresh.diffPtrToHead(current))
 				continue
 			}
+			// A delete can unlink prev from the next chain before it
+			// repairs old.prev. Publish through that surviving link.
+			if before, _ := linkingPrev(old); before != nil {
+				Cas(&fresh.prev, fresh.diffPtrToHead(prev), fresh.diffPtrToHead(before))
+				continue
+			}
 		}
 		v := atomic.LoadUintptr(&prev.next)
-		if v&^1 == prev.diffPtrToHead(old) {
+		if v&^1 != prev.diffPtrToHead(fresh) {
+			if v&^1 != prev.diffPtrToHead(old) {
+				// A delete may restore a marked predecessor while giving
+				// way. Only pass links that still lead through it to old.
+				if before, link := linkingPrev(old); before != prev || link != v {
+					runtime.Gosched()
+					continue
+				}
+			}
 			if !Cas(&prev.next, v, prev.diffPtrToHead(fresh)|v&1) {
 				runtime.Gosched()
 				continue
 			}
-		} else if v&^1 != prev.diffPtrToHead(fresh) {
-			// A partial insert/delete owns this link. Like insertBefore,
-			// reread the position instead of replacing what is there now.
-			runtime.Gosched()
-			continue
 		}
 		stepAt("replaceNode.cas2", old, fresh, next)
 		next = fresh.directNext()
