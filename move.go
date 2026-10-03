@@ -14,6 +14,8 @@ import (
 type moving struct {
 	// src is the memory of the slice; the entry counts while it lives
 	src weak.Pointer[byte]
+	// source keeps a transient replacement alive until it is retired.
+	source unsafe.Pointer
 	// dst is the first byte of the copy, and keeps the copy alive
 	dst         unsafe.Pointer
 	start, last uintptr
@@ -35,8 +37,13 @@ var movings struct {
 
 // addMoving registers the slice from start to last, which is copied to
 // dHead. The entry is dropped once the memory of the slice is reclaimed.
-func addMoving(sHead, dHead unsafe.Pointer, start, last uintptr) *moving {
-	m := &moving{src: weak.Make((*byte)(sHead)), dst: dHead, start: start, last: last}
+func addMoving(sHead, dHead unsafe.Pointer, start, last uintptr, retain bool) *moving {
+	m := &moving{dst: dHead, start: start, last: last}
+	if retain {
+		m.src = weak.Make((*byte)(sHead))
+	} else {
+		m.source = sHead
+	}
 	movings.mu.Lock()
 	defer movings.mu.Unlock()
 	var list []*moving
@@ -47,12 +54,18 @@ func addMoving(sHead, dHead unsafe.Pointer, start, last uintptr) *moving {
 	movings.list.Store(&list)
 	// Value of the weak pointer of an entry keeps the slice alive during a
 	// collection, so the entries are not tested for it here
-	runtime.AddCleanup((*byte)(sHead), dropMoving, m.src)
+	if retain {
+		runtime.AddCleanup((*byte)(sHead), dropMoving, m.src)
+	}
 	return m
 }
 
 // dropMoving drops the entry of the slice of src.
 func dropMoving(src weak.Pointer[byte]) {
+	removeMoving(src, nil)
+}
+
+func removeMoving(src weak.Pointer[byte], transient *moving) {
 	movings.mu.Lock()
 	defer movings.mu.Unlock()
 	old := movings.list.Load()
@@ -61,7 +74,7 @@ func dropMoving(src weak.Pointer[byte]) {
 	}
 	var list []*moving
 	for _, e := range *old {
-		if e.src != src {
+		if (transient != nil && e != transient) || (transient == nil && (e.source != nil || e.src != src)) {
 			list = append(list, e)
 		}
 	}
@@ -106,7 +119,7 @@ func findMoving(node *ListHead) *moving {
 func findMovingIn(list []*moving, node *ListHead) *moving {
 	p := uintptr(unsafe.Pointer(node))
 	for _, e := range list {
-		if p >= e.start && p < e.last && e.src.Value() != nil {
+		if p >= e.start && p < e.last && (e.source != nil || e.src.Value() != nil) {
 			return e
 		}
 	}
@@ -249,7 +262,10 @@ func (m *moving) sourceOf(node *ListHead) *ListHead {
 	if p < d || p >= d+(m.last-m.start) {
 		return nil
 	}
-	s := m.src.Value()
+	s := (*byte)(m.source)
+	if s == nil {
+		s = m.src.Value()
+	}
 	if s == nil {
 		return nil
 	}
@@ -368,6 +384,10 @@ func (mv *SliceMove) copyOf(src *ListHead) *ListHead {
 //
 //go:nocheckptr
 func FreezeSlice(sHead, sTail unsafe.Pointer, dHead unsafe.Pointer, size int, offset int) *SliceMove {
+	return freezeSlice(sHead, sTail, dHead, size, offset, true)
+}
+
+func freezeSlice(sHead, sTail unsafe.Pointer, dHead unsafe.Pointer, size int, offset int, retain bool) *SliceMove {
 	mv := &SliceMove{
 		sHead:  sHead,
 		dHead:  dHead,
@@ -377,11 +397,15 @@ func FreezeSlice(sHead, sTail unsafe.Pointer, dHead unsafe.Pointer, size int, of
 		last:   uintptr(sTail) + uintptr(size),
 		moved:  int(uintptr(dHead)) - int(uintptr(sHead)),
 	}
-	mv.m = addMoving(sHead, dHead, mv.start, mv.last)
+	mv.m = addMoving(sHead, dHead, mv.start, mv.last, retain)
 
 	first := (*ListHead)(unsafe.Add(sHead, offset))
-	for cur := unsafe.Pointer(first); uintptr(cur) < mv.last; cur = unsafe.Add(cur, size) {
-		src := (*ListHead)(cur)
+	step := uintptr(size)
+	if !retain {
+		step = max(step, mv.last-mv.start-step)
+	}
+	for i := uintptr(0); i < mv.last-mv.start; i += step {
+		src := (*ListHead)(unsafe.Add(sHead, i+uintptr(offset)))
 		atomic.OrUintptr(&src.next, 1)
 		atomic.OrUintptr(&src.prev, 1)
 	}
@@ -394,8 +418,8 @@ func FreezeSlice(sHead, sTail unsafe.Pointer, dHead unsafe.Pointer, size int, of
 	for pass, changed := 0, true; changed || pass < 2; pass++ {
 		changed = false
 		mv.outers = mv.outers[:0]
-		for cur := unsafe.Pointer(first); uintptr(cur) < mv.last; cur = unsafe.Add(cur, size) {
-			src := (*ListHead)(cur)
+		for i := uintptr(0); i < mv.last-mv.start; i += step {
+			src := (*ListHead)(unsafe.Add(sHead, i+uintptr(offset)))
 			dst := mv.copyOf(src)
 			prev, next := dst.prev, dst.next
 			for !mv.copyLinks(src, dst) {
@@ -514,5 +538,27 @@ func (mv *SliceMove) Relink() {
 		}
 	}
 	mv.m.done.Store(true)
-	retargetMovings(mv.sHead, mv.m.dst)
+	if mv.m.source == nil {
+		retargetMovings(mv.sHead, mv.m.dst)
+	}
+}
+
+// ReplaceSliceAfterCopy replaces a consecutive chain copied into another slice.
+// The interior relative links must already be copied; only the boundary links
+// are repaired. A single detached node is also allowed. It calls retire after
+// publishing the copies, then makes the old boundaries marked self-links.
+// The caller must serialize source writers, retire their payloads in retire,
+// and never use the old nodes for further list operations. Source nodes must
+// not be copies tracked by earlier SliceMoves. Readers may hold old pointers.
+func ReplaceSliceAfterCopy(sHead, sTail, dHead unsafe.Pointer, size, offset int, retire func()) {
+	mv := freezeSlice(sHead, sTail, dHead, size, offset, false)
+	mv.Relink()
+	retire()
+	step := max(uintptr(mv.size), mv.last-mv.start-uintptr(mv.size))
+	for i := uintptr(0); i < mv.last-mv.start; i += step {
+		node := (*ListHead)(unsafe.Add(mv.sHead, i+uintptr(mv.offset)))
+		atomic.StoreUintptr(&node.prev, 1)
+		atomic.StoreUintptr(&node.next, 1)
+	}
+	removeMoving(weak.Pointer[byte]{}, mv.m)
 }
