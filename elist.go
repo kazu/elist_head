@@ -33,6 +33,7 @@ const (
 	ErrTOverRetyry
 	ErrTNoSafety
 	ErrTNoContinous
+	ErrTMoved
 )
 
 var (
@@ -47,6 +48,9 @@ var (
 	ErrFirstMarked       error = NewError(ErrTFirstMarked, errors.New("first element is marked"))
 	ErrNoSafetyOnAdd     error = NewError(ErrTNoSafety, errors.New("element is not safety to append"))
 	ErrNoContinous       error = NewError(ErrTNoContinous, errors.New("element is not continus"))
+	// ErrMoved tells that the element lies in a slice that a SliceMove
+	// replaces with its copy; MovedTo returns the copy
+	ErrMoved error = NewError(ErrTMoved, errors.New("element is moved"))
 	//ErrNoSafety          error = NewError(ErrTNoSafety, errors.New("element is not safety to append"))
 )
 
@@ -95,7 +99,8 @@ type ListHead struct {
 type initedListHead [2]ListHead
 
 // NewEmptyList ... make Empty List . this has only head and tail terminater.
-//   elist_head require head/tail terminater for list operation.
+//
+//	elist_head require head/tail terminater for list operation.
 func NewEmptyList() initedListHead {
 
 	list := initedListHead{}
@@ -103,15 +108,15 @@ func NewEmptyList() initedListHead {
 	return list
 }
 
-func (l initedListHead) Head() *ListHead {
+func (l *initedListHead) Head() *ListHead {
 	return &l[0]
 }
 
-func (l initedListHead) Tail() *ListHead {
+func (l *initedListHead) Tail() *ListHead {
 	return &l[1]
 }
 
-func (l initedListHead) Insert(nextHead *ListHead, nextTail *ListHead) (err error) {
+func (l *initedListHead) Insert(nextHead *ListHead, nextTail *ListHead) (err error) {
 
 	return l[0].ReplaceNext(nextHead, nextTail, &l[1])
 }
@@ -150,24 +155,24 @@ func NewEmpty() *ListHead {
 
 // head.prev/next = thead
 // head.prev = head.diffPtrToHead(thead)
-func (head *ListHead) diffPtrToHead(thead *ListHead) unsafe.Pointer {
+func (head *ListHead) diffPtrToHead(thead *ListHead) uintptr {
 
 	t := unsafe.Pointer(thead)
 	return head.diffPtrTo(t)
 
 }
 
-func (head *ListHead) diffPtrTo(t unsafe.Pointer) unsafe.Pointer {
+func (head *ListHead) diffPtrTo(t unsafe.Pointer) uintptr {
 	p := unsafe.Pointer(head)
 
-	return unsafe.Add(t, -int(uintptr(p)))
+	return uintptr(t) - uintptr(p)
 
 }
 
 func (head *ListHead) Init() {
 
-	head.prev = uintptr(0)
-	head.next = uintptr(0)
+	atomic.StoreUintptr(&head.prev, 0)
+	atomic.StoreUintptr(&head.next, 0)
 }
 
 // Deprecated ... _Init()
@@ -241,9 +246,13 @@ func (head *ListHead) DirectNext() *ListHead {
 	return head.directNext()
 }
 
+//go:nocheckptr
 func (head *ListHead) directNext() (next *ListHead) {
 
 	nDiff := atomic.LoadUintptr(&head.next)
+	if nDiff&1 != 0 {
+		nDiff--
+	}
 	return (*ListHead)(unsafe.Add(head.ptr(), int(nDiff)))
 }
 
@@ -312,9 +321,13 @@ func (head *ListHead) DirectPrev() *ListHead {
 	return head.directPrev()
 }
 
+//go:nocheckptr
 func (head *ListHead) directPrev() (next *ListHead) {
 
 	pDiff := atomic.LoadUintptr(&head.prev)
+	if pDiff&1 != 0 {
+		pDiff--
+	}
 	return (*ListHead)(unsafe.Add(head.ptr(), int(pDiff)))
 
 }

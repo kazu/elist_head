@@ -4,28 +4,8 @@ import (
 	"unsafe"
 )
 
-type List interface {
-	Offset() uintptr
-	PtrListHead() *ListHead
-	FromListHead(*ListHead) List
-}
-
-func __ElementOf(l List, head *ListHead) unsafe.Pointer {
-	if head == nil || l == nil {
-		return nil
-	}
-
-	return unsafe.Pointer(uintptr(head.Ptr()) - l.Offset())
-}
-
-func _ElementOf(l List, head *ListHead) unsafe.Pointer {
-	if head == nil || l == nil {
-		return nil
-	}
-
-	return unsafe.Pointer(uintptr(unsafe.Pointer(head)) - l.Offset())
-}
-
+// ElementOf returns the containing element at the supplied field offset.
+// head must point to that field of a live element.
 func ElementOf(head unsafe.Pointer, offset uintptr) unsafe.Pointer {
-	return unsafe.Pointer(uintptr(head) - offset)
+	return unsafe.Add(head, -int(offset))
 }

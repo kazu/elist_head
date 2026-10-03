@@ -36,7 +36,8 @@ func (head *ListHead) InsertBefore(new *ListHead, opts ...list_head.TravOpt) (*L
 
 	if new.IsMarked() {
 		if ok, _ := new.IsSafety(); ok {
-			new.prev, new.next = uintptr(0), uintptr(0)
+			atomic.StoreUintptr(&new.prev, 0)
+			atomic.StoreUintptr(&new.next, 0)
 		} else {
 			return head, ErrNoSafetyOnAdd
 		}
@@ -45,16 +46,50 @@ func (head *ListHead) InsertBefore(new *ListHead, opts ...list_head.TravOpt) (*L
 	if head.isMarkedForDeleteWithoutError() {
 		return head, ErrMarked
 	}
+	stepAt("insert.begin", new, nil, head)
 
 	nNode := toNode(new)
-	head.insertBefore(nNode, opts...)
-	return head, nil
+	err := head.insertBefore(nNode, opts...)
+	return head, err
 
-	return nil, nil
 
 }
 
-func (head *ListHead) insertBefore(new *ListHead, opts ...list_head.TravOpt) {
+// TryInsertBefore links new just before head in one attempt. It reads the
+// node before head once and links new there only if accept returns true for
+// that node. It returns an error without linking new when head is marked, is
+// not linked to a previous node, is rejected by accept, when new is linked,
+// or when another goroutine changed the links first; the caller finds the
+// position again.
+func (head *ListHead) TryInsertBefore(new *ListHead, accept func(prev *ListHead) bool) error {
+
+	if new.IsMarked() {
+		if findMoving(new) != nil {
+			return ErrMoved
+		}
+		if ok, _ := new.IsSafety(); ok {
+			stepAt("insert.safe", new, nil, head)
+			// only while the marks stay: another insert of new may have
+			// cleared and taken the links already
+			new.InitMarked()
+		} else {
+			return ErrNoSafetyOnAdd
+		}
+	}
+
+	if head.isMarkedForDeleteWithoutError() {
+		return ErrMarked
+	}
+	stepAt("insert.begin", new, nil, head)
+
+	prev := head.directPrev()
+	if prev == head || !accept(prev) {
+		return ErrNotAppend
+	}
+	return listAddWitCas(toNode(new), prev, head, nil)
+}
+
+func (head *ListHead) insertBefore(new *ListHead, opts ...list_head.TravOpt) error {
 
 	var err error
 	mode := list_head.NewTraverse()
@@ -70,12 +105,18 @@ func (head *ListHead) insertBefore(new *ListHead, opts ...list_head.TravOpt) {
 	next := head
 	prev := head.directPrev()
 	err = list_head.Retry(100, func(retry int) (finish bool, err error) {
+		if prev == head {
+			return true, ErrNotAppend
+		}
 		err = listAddWitCas(new,
 			prev,
 			next, nil)
 		//next, mode.Mu)
 		if err == nil {
 			return true, err
+		}
+		if head.isMarkedForDeleteWithoutError() {
+			return true, ErrMarked
 		}
 		prev = head.directPrev()
 		//AddRecoverState("cas retry")
@@ -84,7 +125,7 @@ func (head *ListHead) insertBefore(new *ListHead, opts ...list_head.TravOpt) {
 	if err != nil {
 		mode.SetError(err)
 	}
-	return
+	return err
 }
 
 // ReplaceNext ... replace next element to new multiple list
@@ -105,35 +146,57 @@ func (head *ListHead) ReplaceNext(nextHead *ListHead, nextTail *ListHead, next *
 	// prev := head.directPrev()
 
 	err = list_head.Retry(100, func(retry int) (finish bool, err error) {
-		oldNext := head.next
-		oldNewNextPrev := next.prev
+		stepAt("replace.begin", head, nextHead, next)
+		oldNext := atomic.LoadUintptr(&head.next)
+		oldNewNextPrev := atomic.LoadUintptr(&next.prev)
+		stepAt("replace.read", head, nextHead, next)
 
-		rollback := func(head, next *ListHead) {
-			atomic.StoreUintptr(&head.next, oldNext)
-			atomic.StoreUintptr(&next.prev, oldNewNextPrev)
+		// a delete of head or next has marked the link
+		if oldNext&1 != 0 || oldNewNextPrev&1 != 0 {
+			return true, ErrMarked
 		}
-		_ = rollback
 		atomic.StoreUintptr(&nextHead.prev, uintptr(nextHead.diffPtrToHead(head)))
 		atomic.StoreUintptr(&nextTail.next, uintptr(nextTail.diffPtrToHead(next)))
 
 		if !Cas(&head.next, oldNext, uintptr(head.diffPtrToHead(nextHead))) {
-			goto ROLLBACK
+			stepAt("replace.retry", head, nextHead, next)
+			return false, NewError(ErrTCasConflictOnAdd, errors.New("cas conflict in Replace"))
 		}
+		stepAt("replace.cas2", head, nextHead, next)
 
 		if !Cas(&next.prev, oldNewNextPrev, uintptr(next.diffPtrToHead(nextTail))) {
-			goto ROLLBACK
+			// a delete of the last replaced node has already linked next
+			// back to nextTail
+			if linksBackTo(next, nextTail, head) {
+				return true, nil
+			}
+			Cas(&head.next, uintptr(head.diffPtrToHead(nextHead)), oldNext)
+			stepAt("replace.rollback", head, nextHead, next)
+			return false, NewError(ErrTCasConflictOnAdd, errors.New("cas conflict in Replace"))
 		}
 
 		return true, err
-
-	ROLLBACK:
-		rollback(head, next)
-		return false, NewError(ErrTCasConflictOnAdd, errors.New("cas conflict in Replace"))
 	})
 	if err != nil {
 		//mode.SetError(err)
 	}
 	return
+}
+
+// linksBackTo reports whether walking the prevs from next reaches tail
+// before head.
+//
+//go:nocheckptr
+func linksBackTo(next, tail, head *ListHead) bool {
+	for cur := next.directPrev(); cur != next; cur = cur.directPrev() {
+		if cur == tail {
+			return true
+		}
+		if cur == head || cur.directPrev() == cur {
+			return false
+		}
+	}
+	return false
 }
 
 type mutex struct {
@@ -166,8 +229,19 @@ var mu4Add *mutex = newMutex(false)
 //   prev --> next     prev ---> new
 func listAddWitCas(new, prev, next *ListHead, fn func(*ListHead) *sync.RWMutex) (err error) {
 	// backup for roolback
-	oNewPrev := new.prev
-	oNewNext := new.next
+	oNewPrev := atomic.LoadUintptr(&new.prev)
+	oNewNext := atomic.LoadUintptr(&new.next)
+	if (oNewPrev|oNewNext)&1 != 0 && findMoving(new) != nil {
+		return ErrMoved
+	}
+	// new is taken from no links by the CAS below, so that of two inserts
+	// of new only one links it; the other finds new linked
+	if oNewPrev != 0 || oNewNext != 0 {
+		return NewError(ErrTCasConflictOnAdd,
+			fmt.Errorf("listAddWithCas() new is linked: new=%s prev=%s next=%s", new.P(), prev.P(), next.P()))
+	}
+	toPrev := uintptr(new.diffPtrToHead(prev))
+	toNext := uintptr(new.diffPtrToHead(next))
 	if fn != nil {
 		if !prev.Empty() {
 			fn(prev).Lock()
@@ -178,36 +252,67 @@ func listAddWitCas(new, prev, next *ListHead, fn func(*ListHead) *sync.RWMutex) 
 			defer fn(next).Unlock()
 		}
 	}
+	// a link of new that a move marked meanwhile stays as it is
 	rollback := func(new *ListHead) {
-		atomic.StoreUintptr(&new.prev, oNewPrev)
-		atomic.StoreUintptr(&new.next, oNewNext)
+		Cas(&new.prev, toPrev, oNewPrev)
+		Cas(&new.next, toNext, oNewNext)
 
 		// StoreListHead(&new.prev, (*ListHead)(unsafe.Pointer(oNewPrev)))
 		// StoreListHead(&new.next, (*ListHead)(unsafe.Pointer(oNewNext)))
 	}
 	_ = rollback
 
-	// new.prev -> prev, new.next -> next
-	atomic.StoreUintptr(&new.prev, uintptr(new.diffPtrToHead(prev)))
-	atomic.StoreUintptr(&new.next, uintptr(new.diffPtrToHead(next)))
+	// new.prev -> prev, new.next -> next; new.prev that another insert took
+	// first is not put back
+	if !Cas(&new.prev, oNewPrev, toPrev) {
+		if IsMoved(new) {
+			return ErrMoved
+		}
+		return NewError(ErrTCasConflictOnAdd,
+			fmt.Errorf("listAddWithCas() the links of new changed: new=%s prev=%s next=%s", new.P(), prev.P(), next.P()))
+	}
+	if !Cas(&new.next, oNewNext, toNext) {
+		rollback(new)
+		if IsMoved(new) {
+			return ErrMoved
+		}
+		return NewError(ErrTCasConflictOnAdd,
+			fmt.Errorf("listAddWithCas() the links of new changed: new=%s prev=%s next=%s", new.P(), prev.P(), next.P()))
+	}
 	// StoreListHead(&new.prev, prev)
 	// StoreListHead(&new.next, next)
+
+	// prev is deleted or moved: the CAS of prev.next fails on the mark,
+	// until the caller finds another position
+	if atomic.LoadUintptr(&prev.next)&1 != 0 {
+		rollback(new)
+		if IsMoved(new) {
+			return ErrMoved
+		}
+		return ErrMarked
+	}
 
 	mu4Add.Lock()
 	defer mu4Add.Unlock()
 	a := prev.diffPtrToHead(next)
 	b := prev.diffPtrToHead(new)
 	_, _ = a, b
+	stepAt("add.cas1", new, prev, next)
+	// an insert before next waits while next is half inserted: the node after
+	// next does not link back to next yet
+	if nn := next.directNext(); nn != next && nn.directPrev() != next {
+		goto ROLLBACK
+	}
 	if !Cas(&prev.next, uintptr(prev.diffPtrToHead(next)), uintptr(prev.diffPtrToHead(new))) {
 		goto ROLLBACK
 	}
-	if !Cas(&next.prev, uintptr(next.diffPtrToHead(prev)), uintptr(next.diffPtrToHead(new))) {
+	stepAt("add.cas2", new, prev, next)
+	// a move marked new, and may have taken it as not linked
+	if IsMoved(new) || !Cas(&next.prev, uintptr(next.diffPtrToHead(prev)), uintptr(next.diffPtrToHead(new))) {
 		//if !Cas(&next.prev, prev, new) {
 
-		if !Cas(&prev.next, uintptr(prev.diffPtrToHead(new)), uintptr(prev.diffPtrToHead(next))) {
-			//if !Cas(&prev.next, new, next) {
-			_ = "fail rollback?"
-		}
+		stepAt("add.rollback", new, prev, next)
+		undoLink(&prev.next, uintptr(prev.diffPtrToHead(new)), uintptr(prev.diffPtrToHead(next)))
 
 		goto ROLLBACK
 
@@ -218,6 +323,9 @@ func listAddWitCas(new, prev, next *ListHead, fn func(*ListHead) *sync.RWMutex) 
 ROLLBACK:
 
 	rollback(new)
+	if IsMoved(new) {
+		return ErrMoved
+	}
 	return NewError(ErrTCasConflictOnAdd,
 		fmt.Errorf("listAddWithCas() please retry: new=%s prev=%s next=%s", new.P(), prev.P(), next.P()))
 
@@ -225,10 +333,10 @@ ROLLBACK:
 
 func (head *ListHead) IsMarked() bool {
 
-	if uintptr(head.prev)&1 > 0 {
+	if atomic.LoadUintptr(&head.prev)&1 > 0 {
 		return true
 	}
-	if uintptr(head.next)&1 > 0 {
+	if atomic.LoadUintptr(&head.next)&1 > 0 {
 		return true
 	}
 	return false
@@ -236,19 +344,25 @@ func (head *ListHead) IsMarked() bool {
 
 func (head *ListHead) IsSafety() (bool, error) {
 
-	prev := head.Prev() // should skip mark
-	next := head.Next() // should skip mark
+	prev := PrevNoM(head) // should skip mark
+	next := NextNoM(head) // should skip mark
 
-	if prev.IsMarked() {
+	if prev.directNext().IsMarked() {
 		return false, nil
 	}
-	if next.IsMarked() {
+	if next.directPrev().IsMarked() {
 		return false, nil
 	}
 	if prev == head {
 		return false, nil
 	}
 	if next == head {
+		return false, nil
+	}
+	if prev.directNext() == head || next.directPrev() == head {
+		return false, nil
+	}
+	if !head.unlinked() {
 		return false, nil
 	}
 	return true, nil

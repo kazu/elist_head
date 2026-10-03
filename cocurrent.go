@@ -7,8 +7,6 @@
 package elist_head
 
 import (
-	"errors"
-	"fmt"
 	"sync/atomic"
 	"unsafe"
 
@@ -41,12 +39,18 @@ func Cas(target *uintptr, old, new uintptr) bool {
 		new)
 }
 
+// MarkListHead sets the mark bit of the link at target only while the link
+// still holds old. It also succeeds when the link already holds old with the
+// mark bit, so that a retried delete can mark the same link again.
 func MarkListHead(target *uintptr, old uintptr) bool {
 
 	//mask := uintptr(^uint(0)) ^ 1
-	return atomic.CompareAndSwapUintptr(target,
-		*target,
-		uintptr(old)|1)
+	if atomic.CompareAndSwapUintptr(target,
+		old,
+		uintptr(old)|1) {
+		return true
+	}
+	return atomic.LoadUintptr(target) == uintptr(old)|1
 
 }
 
@@ -84,67 +88,11 @@ func OuterPtrs(sHead, sTail unsafe.Pointer, dHead unsafe.Pointer, size int, offs
 	return
 }
 
+// RepaireSliceAfterCopy leads the list to the copy at dHead of the slice of
+// nodes from sHead to sTail, which the caller copied before. It is FreezeSlice
+// and Relink of a SliceMove in one step, for a slice whose data no writer
+// changes meanwhile.
 func RepaireSliceAfterCopy(sHead, sTail unsafe.Pointer, dHead unsafe.Pointer, size int, offset int) error {
-
-	start := uintptr(sHead)
-	last := uintptr(sTail) + uintptr(size)
-
-	moved := int(uintptr(dHead)) - int(uintptr(sHead))
-
-	cntChanged := 0
-	for cur := unsafe.Add(sHead, offset); uintptr(cur) < uintptr(last); cur = unsafe.Add(cur, size) {
-
-		// if cntChanged >= 2 {
-		// 	break
-		// }
-
-		cHead := (*ListHead)(cur)
-		ptrs := cHead.noInners(start, last)
-
-		if len(ptrs) == 0 {
-			continue
-		}
-		dHead := (*ListHead)(unsafe.Add(cur, moved))
-
-		// if cntChanged >= 3 {
-		// 	fmt.Printf("invalid count")
-		// }
-
-		for _, iPtr := range ptrs {
-
-			if iPtr == cHead.prev {
-				t := cHead.directPrev()
-				//t.next = IncPointer(t.next, moved)
-				if !CasIncPointer(&t.next, uintptr(cur)-uintptr(unsafe.Pointer(t)), moved) {
-					return errors.New("duplicated rewrite outside ListHead")
-				}
-
-				dHead.prev = IncPointer(dHead.prev, -moved)
-
-				tt := dHead.directPrev()
-				succ := tt == t && tt.directNext() != cHead
-				if !succ {
-					return fmt.Errorf("invalid ListHead.prev oldHead.direcvPrev()=%016p ?== newHead.directPrev()=%016p or newHead.directNext()=%016p ?== oldHead=%016p ",
-						t, tt, tt.directNext(), cHead)
-				}
-
-			} else if iPtr == cHead.next {
-				t := cHead.directNext()
-
-				//t.prev = IncPointer(t.prev, moved)
-				if !CasIncPointer(&t.prev, uintptr(cur)-uintptr(unsafe.Pointer(t)), moved) {
-					return errors.New("duplicated rewrite outside ListHead")
-				}
-				dHead.next = IncPointer(dHead.next, -moved)
-
-				tt := dHead.directNext()
-				succ := tt == t && tt.directPrev() != cHead
-				if !succ {
-					return errors.New("invalid ListHead.next")
-				}
-			}
-		}
-		cntChanged++
-	}
+	FreezeSlice(sHead, sTail, dHead, size, offset).Relink()
 	return nil
 }
