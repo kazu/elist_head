@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	elist "github.com/kazu/elist_head"
-	list_head "github.com/kazu/loncha/lista_encabezado"
+	list_head "github.com/kazu/lista_encabezado"
 )
 
 // Next and Prev waiting for no mark take the neighbour of a node with one

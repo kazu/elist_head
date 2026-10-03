@@ -3,7 +3,7 @@ package elist_head
 import (
 	"unsafe"
 
-	list_head "github.com/kazu/loncha/lista_encabezado"
+	list_head "github.com/kazu/lista_encabezado"
 )
 
 type Head interface {
