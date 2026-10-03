@@ -10,7 +10,7 @@ import (
 	"sync/atomic"
 	"unsafe"
 
-	list_head "github.com/kazu/loncha/lista_encabezado"
+	list_head "github.com/kazu/lista_encabezado"
 )
 
 var sharedModeTraverse *list_head.ModeTraverse = list_head.NewTraverse()
