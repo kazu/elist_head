@@ -64,16 +64,21 @@ var (
 	ErrDeketeStep1 error = errors.New("fail step 1")
 	ErrDeketeStep2 error = errors.New("fail step 2")
 	ErrDeketeStep3 error = errors.New("fail step 3")
+
+	// markForDeleteTraverse is the mode of every MarkForDelete; options of a
+	// call are applied to it and put back when the call returns
+	markForDeleteTraverse = list_head.NewTraverse()
 )
 
 //go:nocheckptr
 func (head *ListHead) MarkForDelete(opts ...list_head.TravOpt) (err error) {
 
-	mode := list_head.NewTraverse()
-	defer mode.Error()
-	for _, opt := range opts {
-		opt(mode)
+	mode := markForDeleteTraverse
+	if len(opts) > 0 {
+		prevs := mode.Option(opts...)
+		defer mode.Option(prevs...)
 	}
+	defer mode.Error()
 
 	if !head.canPurge() {
 		return ErrNotMarked
@@ -88,7 +93,9 @@ func (head *ListHead) MarkForDelete(opts ...list_head.TravOpt) (err error) {
 		link     *uintptr
 		from, to uintptr
 	}
-	var relinked []relink
+	// a delete relinks at most one link on each side of head
+	var relinkBuf [2]relink
+	relinked := relinkBuf[:0]
 	giveWay := func() (fin bool, err error) {
 		for i := len(relinked) - 1; i >= 0; i-- {
 			undoLink(relinked[i].link, relinked[i].to, relinked[i].from)
