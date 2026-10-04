@@ -59,6 +59,13 @@ func (head *ListHead) Delete(opts ...func(*ListHead) error) (result *ListHead, e
 	return nil, e
 }
 
+var (
+	ErrDeketeStep0 error = errors.New("fail step 0")
+	ErrDeketeStep1 error = errors.New("fail step 1")
+	ErrDeketeStep2 error = errors.New("fail step 2")
+	ErrDeketeStep3 error = errors.New("fail step 3")
+)
+
 //go:nocheckptr
 func (head *ListHead) MarkForDelete(opts ...list_head.TravOpt) (err error) {
 
@@ -73,14 +80,6 @@ func (head *ListHead) MarkForDelete(opts ...list_head.TravOpt) (err error) {
 	}
 	mu4Add.Lock()
 	defer mu4Add.Unlock()
-
-	var (
-		ErrDeketeStep0 error = errors.New("fail step 0")
-		ErrDeketeStep1 error = errors.New("fail step 1")
-		ErrDeketeStep2 error = errors.New("fail step 2")
-		ErrDeketeStep3 error = errors.New("fail step 3")
-	)
-	_, _ = ErrDeketeStep2, ErrDeketeStep3
 
 	// the links of head that this delete marked, and the links of other
 	// nodes that it changed
